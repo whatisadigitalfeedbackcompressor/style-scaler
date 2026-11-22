@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "catalog_name": "StyleScaler Preset Catalog",
-  "updated_at": "2026-11-22T21:16:21Z",
+  "updated_at": "2026-11-22T21:21:21Z",
   "genres": {
     "Drum & Bass": [
       "liquid_dnb",
@@ -36,7 +36,7 @@
       "default_bpm": 92.0,
       "mode": "dorian",
       "tonic_pc": 0,
-      "updated_at": "2026-11-22T21:16:21Z"
+      "updated_at": "2026-11-22T21:21:21Z"
     },
     {
       "id": "funk_disco",
@@ -50,7 +50,7 @@
       "default_bpm": 147.1818181818182,
       "mode": "minor",
       "tonic_pc": 7,
-      "updated_at": "2026-11-22T21:16:21Z",
+      "updated_at": "2026-11-22T21:21:21Z",
       "tags": [
         "funk / disco",
         "r&b / neo-soul",
@@ -70,7 +70,7 @@
       "default_bpm": 174.0,
       "mode": "minor",
       "tonic_pc": 0,
-      "updated_at": "2026-11-22T21:16:21Z"
+      "updated_at": "2026-11-22T21:21:21Z"
     },
     {
       "id": "melodic_house",
@@ -84,7 +84,7 @@
       "default_bpm": 124.0,
       "mode": "minor",
       "tonic_pc": 0,
-      "updated_at": "2026-11-22T21:16:21Z"
+      "updated_at": "2026-11-22T21:21:21Z"
     },
     {
       "id": "neo_soul",
@@ -98,7 +98,7 @@
       "default_bpm": 88.0,
       "mode": "dorian",
       "tonic_pc": 7,
-      "updated_at": "2026-11-22T21:16:21Z"
+      "updated_at": "2026-11-22T21:21:21Z"
     },
     {
       "id": "neuro_dnb",
@@ -112,7 +112,7 @@
       "default_bpm": 174.0,
       "mode": "phrygian",
       "tonic_pc": 0,
-      "updated_at": "2026-11-22T21:16:21Z"
+      "updated_at": "2026-11-22T21:21:21Z"
     },
     {
       "id": "trap",
@@ -126,7 +126,7 @@
       "default_bpm": 140.0,
       "mode": "phrygian",
       "tonic_pc": 0,
-      "updated_at": "2026-11-22T21:16:21Z"
+      "updated_at": "2026-11-22T21:21:21Z"
     }
   ]
 }
