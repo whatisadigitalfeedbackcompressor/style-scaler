@@ -82,6 +82,9 @@ def main() -> None:
     parser.add_argument("--download-model", action="store_true")
     parser.add_argument("--spectral", action="store_true")
     parser.add_argument("--save-midi-dir", default=None)
+    parser.add_argument("--cache-dir", default=None, help="Per-song transcription checkpoint directory")
+    parser.add_argument("--merge-existing", dest="merge_existing", action="store_true", default=None)
+    parser.add_argument("--no-merge", dest="merge_existing", action="store_false")
     parser.add_argument("--push", action="store_true", help="Commit & push updated presets/catalog to GitHub origin")
     parser.add_argument("--commit-msg", default="Add deconstructed style presets to catalog")
     args = parser.parse_args()
@@ -109,6 +112,12 @@ def main() -> None:
             cmd.append("--spectral")
         if args.save_midi_dir:
             cmd.extend(["--save-midi-dir", str(Path(args.save_midi_dir).resolve())])
+        if args.cache_dir:
+            cmd.extend(["--cache-dir", str(Path(args.cache_dir).resolve())])
+        if args.merge_existing is True:
+            cmd.append("--merge-existing")
+        elif args.merge_existing is False:
+            cmd.append("--no-merge")
         print("Running:", " ".join(cmd))
         subprocess.run(cmd, check=True)
     else:

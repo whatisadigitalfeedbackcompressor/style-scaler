@@ -467,3 +467,65 @@ TEST_CASE("TranscriptionService detects WAV RIFF LIST/INFO metadata genre and St
 
     tmpDir.deleteRecursively();
 }
+
+TEST_CASE("AudioCaptureRingBuffer circular wrap retains newest samples cleanly", "[capture][ring]") {
+    constexpr double kSr = 8000.0;
+    AudioCaptureRingBuffer ring(1.0); // 8000 sample capacity
+    ring.prepare(kSr);
+    ring.startCapture();
+
+    // Push 12000 samples (1.5x capacity) with ramp value i
+    std::vector<float> data(12000);
+    for (size_t i = 0; i < data.size(); ++i) data[i] = static_cast<float>(i);
+    for (size_t pos = 0; pos < data.size(); pos += 500) {
+        const float* ptrs[1] = {data.data() + pos};
+        ring.pushBlock(ptrs, 1, 500);
+    }
+    REQUIRE(ring.isCapturing());
+    CHECK(ring.capturedSeconds() == Approx(1.0).margin(0.01));
+
+    const auto snap = ring.extractSnapshot();
+    REQUIRE(snap.mono_samples.size() == 8000);
+    CHECK(snap.mono_samples.front() == Approx(4000.0f));
+    CHECK(snap.mono_samples.back() == Approx(11999.0f));
+}
+
+TEST_CASE("MidiSequencer live MIDI Bind (C2..D#3) triggers and releases bound pad chord without stuck notes", "[sequencer][midibind]") {
+    LockFreePatternSlot slot;
+    auto pat = std::make_unique<PatternBuffer>();
+    pat->loop_beats = 4.0;
+    pat->num_pads = 1;
+    pat->pad_chords[0].num_notes = 3;
+    pat->pad_chords[0].pitches = {60, 63, 67, 0, 0, 0, 0, 0};
+    slot.publish(std::move(pat));
+
+    MidiSequencer seq;
+    seq.prepare(44100.0);
+    seq.setDawSync(false);
+    seq.setInternalPlaying(false);
+
+    juce::MidiBuffer midi;
+    midi.addEvent(juce::MidiMessage::noteOn(1, 36, static_cast<juce::uint8>(100)), 0);
+    seq.processBlock(512, nullptr, slot, midi, true, true, true);
+    CHECK(countNoteOnMessages(midi, 1) == 3);
+    CHECK(seq.isNoteActive(1, 60));
+    CHECK(seq.isNoteActive(1, 63));
+    CHECK(seq.isNoteActive(1, 67));
+
+    midi.clear();
+    midi.addEvent(juce::MidiMessage::noteOff(1, 36), 10);
+    seq.processBlock(512, nullptr, slot, midi, true, true, true);
+    CHECK_FALSE(seq.isNoteActive(1, 60));
+    CHECK_FALSE(seq.isNoteActive(1, 63));
+    CHECK_FALSE(seq.isNoteActive(1, 67));
+}
+
+TEST_CASE("SongSection parameter switches Intro/Chorus/Outro on StyleScalerAudioProcessor", "[processor][section]") {
+    StyleScalerAudioProcessor proc;
+    auto* secParam = proc.apvts().getParameter(ParamIDs::songSection);
+    REQUIRE(secParam != nullptr);
+    secParam->setValueNotifyingHost(secParam->convertTo0to1(0.0f));
+    CHECK(proc.getSnapshot().song_section == SongSection::Intro);
+    secParam->setValueNotifyingHost(secParam->convertTo0to1(2.0f));
+    CHECK(proc.getSnapshot().song_section == SongSection::Outro);
+}

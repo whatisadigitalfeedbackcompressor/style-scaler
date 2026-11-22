@@ -78,25 +78,25 @@ StyleProfile makeDefaultStyleProfile() {
     return p;
 }
 
-void normalizeProfileDistributions(StyleProfile& profile) {
+void normalizeHarmonyAndMelody(HarmonyAxis& harmony, MelodyAxis& melody) {
     // Normalize vocabulary weights
     double vocabSum = 0.0;
-    for (auto& entry : profile.harmony.vocabulary) {
+    for (auto& entry : harmony.vocabulary) {
         entry.weight = std::max(0.0, entry.weight);
         entry.cadence_weight = std::max(0.0, entry.cadence_weight);
         vocabSum += entry.weight;
     }
-    if (!profile.harmony.vocabulary.empty()) {
+    if (!harmony.vocabulary.empty()) {
         if (vocabSum <= 0.0) {
-            const double uniform = 1.0 / static_cast<double>(profile.harmony.vocabulary.size());
-            for (auto& entry : profile.harmony.vocabulary) entry.weight = uniform;
+            const double uniform = 1.0 / static_cast<double>(harmony.vocabulary.size());
+            for (auto& entry : harmony.vocabulary) entry.weight = uniform;
         } else {
-            for (auto& entry : profile.harmony.vocabulary) entry.weight /= vocabSum;
+            for (auto& entry : harmony.vocabulary) entry.weight /= vocabSum;
         }
     }
 
     // Normalize Markov transition rows
-    for (auto& [fromSym, row] : profile.harmony.transitions) {
+    for (auto& [fromSym, row] : harmony.transitions) {
         double rowSum = 0.0;
         for (auto& [toSym, prob] : row) {
             prob = std::max(0.0, prob);
@@ -112,14 +112,23 @@ void normalizeProfileDistributions(StyleProfile& profile) {
 
     // Normalize melody interval histogram
     double histSum = 0.0;
-    for (double& v : profile.melody.interval_histogram) {
+    for (double& v : melody.interval_histogram) {
         v = std::max(0.0, v);
         histSum += v;
     }
     if (histSum > 0.0) {
-        for (double& v : profile.melody.interval_histogram) v /= histSum;
+        for (double& v : melody.interval_histogram) v /= histSum;
     } else {
-        profile.melody.interval_histogram = defaultIntervalHistogram();
+        melody.interval_histogram = defaultIntervalHistogram();
+    }
+}
+
+void normalizeProfileDistributions(StyleProfile& profile) {
+    normalizeHarmonyAndMelody(profile.harmony, profile.melody);
+    for (auto& [secName, sec] : profile.sections) {
+        if (sec.populated) {
+            normalizeHarmonyAndMelody(sec.harmony, sec.melody);
+        }
     }
 }
 
@@ -250,6 +259,211 @@ ValidationResult validate(const StyleProfile& profile) {
     return res;
 }
 
+namespace {
+
+nlohmann::json harmonyToJson(const HarmonyAxis& h) {
+    nlohmann::json vocabJson = nlohmann::json::array();
+    for (const auto& entry : h.vocabulary) {
+        vocabJson.push_back({
+            {"symbol", entry.symbol},
+            {"degree", entry.chord.degree},
+            {"accidental", entry.chord.accidental},
+            {"quality", std::string(qualityName(entry.chord.quality))},
+            {"bass_degree_offset", entry.chord.bass_degree_offset},
+            {"weight", entry.weight},
+            {"cadence_weight", entry.cadence_weight}
+        });
+    }
+    return {
+        {"tonic_pc", h.tonic_pc},
+        {"mode", std::string(modeName(h.mode))},
+        {"vocabulary", vocabJson},
+        {"transitions", h.transitions},
+        {"chromaticism", h.chromaticism}
+    };
+}
+
+nlohmann::json rhythmToJson(const RhythmAxis& r) {
+    return {
+        {"subdivision", r.subdivision},
+        {"chord_onset_grid", r.chord_onset_grid},
+        {"melody_onset_grid", r.melody_onset_grid},
+        {"bass_onset_grid", r.bass_onset_grid},
+        {"syncopation", r.syncopation},
+        {"anticipation", r.anticipation},
+        {"swing", r.swing},
+        {"harmonic_pacing", r.harmonic_pacing},
+        {"sustain_ratio", r.sustain_ratio}
+    };
+}
+
+nlohmann::json voicingToJson(const VoicingAxis& v) {
+    return {
+        {"register_low", v.register_low},
+        {"register_high", v.register_high},
+        {"center_pitch", v.center_pitch},
+        {"spread_semitones", v.spread_semitones},
+        {"min_notes", v.min_notes},
+        {"max_notes", v.max_notes},
+        {"extension_richness", v.extension_richness},
+        {"drop2_prob", v.drop2_prob},
+        {"inversion_prob", v.inversion_prob},
+        {"voice_leading_tightness", v.voice_leading_tightness},
+        {"sub_bass_clearance_midi", v.sub_bass_clearance_midi},
+        {"bass_register_low", v.bass_register_low},
+        {"bass_register_high", v.bass_register_high}
+    };
+}
+
+nlohmann::json melodyToJson(const MelodyAxis& m) {
+    return {
+        {"interval_histogram", m.interval_histogram},
+        {"chord_tone_ratio", m.chord_tone_ratio},
+        {"tension_tone_ratio", m.tension_tone_ratio},
+        {"motif_density", m.motif_density},
+        {"motif_repetition", m.motif_repetition},
+        {"arch_contour", m.arch_contour},
+        {"register_low", m.register_low},
+        {"register_high", m.register_high},
+        {"legato_ratio", m.legato_ratio}
+    };
+}
+
+double reqNumField(const nlohmann::json& obj, const char* key, double fallback, std::vector<std::string>& errs) {
+    if (!obj.contains(key)) {
+        errs.push_back(std::string("Missing field: ") + key);
+        return fallback;
+    }
+    if (!obj[key].is_number()) {
+        errs.push_back(std::string("Field must be numeric: ") + key);
+        return fallback;
+    }
+    return obj[key].get<double>();
+}
+
+HarmonyAxis harmonyFromJson(const nlohmann::json& h, std::vector<std::string>& errs) {
+    HarmonyAxis out;
+    out.tonic_pc = h.value("tonic_pc", 0);
+    if (const auto m = parseMode(h.value("mode", "minor"))) {
+        out.mode = *m;
+    } else {
+        errs.push_back("Invalid harmony.mode");
+    }
+    out.chromaticism = h.value("chromaticism", 0.15);
+
+    if (!h.contains("vocabulary") || !h["vocabulary"].is_array()) {
+        errs.push_back("Missing harmony.vocabulary array");
+    } else {
+        for (const auto& item : h["vocabulary"]) {
+            ChordVocabEntry entry;
+            entry.symbol = item.value("symbol", "");
+            if (item.contains("degree") && item.contains("quality")) {
+                entry.chord.degree = item.value("degree", 1);
+                entry.chord.accidental = item.value("accidental", 0);
+                if (auto q = parseQuality(item.value("quality", "min"))) {
+                    entry.chord.quality = *q;
+                } else {
+                    errs.push_back("Invalid chord quality in vocabulary for '" + entry.symbol + "'");
+                }
+                entry.chord.bass_degree_offset = item.value("bass_degree_offset", 0);
+            } else if (auto parsed = parseRomanChord(entry.symbol)) {
+                entry.chord = *parsed;
+            } else {
+                errs.push_back("Cannot parse Roman symbol '" + entry.symbol + "'");
+            }
+            if (entry.symbol.empty()) {
+                entry.symbol = formatRomanChord(entry.chord);
+            }
+            entry.weight = item.value("weight", 1.0);
+            entry.cadence_weight = item.value("cadence_weight", 0.0);
+            out.vocabulary.push_back(std::move(entry));
+        }
+    }
+
+    if (h.contains("transitions") && h["transitions"].is_object()) {
+        for (auto it = h["transitions"].begin(); it != h["transitions"].end(); ++it) {
+            if (!it.value().is_object()) {
+                errs.push_back("Transition row '" + it.key() + "' must be an object");
+                continue;
+            }
+            std::map<std::string, double> row;
+            for (auto jt = it.value().begin(); jt != it.value().end(); ++jt) {
+                if (!jt.value().is_number()) {
+                    errs.push_back("Non-numeric transition probability in '" + it.key() + "'");
+                    continue;
+                }
+                row[jt.key()] = jt.value().get<double>();
+            }
+            out.transitions[it.key()] = std::move(row);
+        }
+    }
+    return out;
+}
+
+RhythmAxis rhythmFromJson(const nlohmann::json& r, std::vector<std::string>& errs) {
+    RhythmAxis out;
+    out.subdivision = r.value("subdivision", 16);
+    if (r.contains("chord_onset_grid")) {
+        out.chord_onset_grid = parseDoubleArray<16>(r["chord_onset_grid"], "rhythm.chord_onset_grid", errs);
+    } else {
+        errs.push_back("Missing rhythm.chord_onset_grid");
+    }
+    if (r.contains("melody_onset_grid")) {
+        out.melody_onset_grid = parseDoubleArray<16>(r["melody_onset_grid"], "rhythm.melody_onset_grid", errs);
+    } else {
+        errs.push_back("Missing rhythm.melody_onset_grid");
+    }
+    if (r.contains("bass_onset_grid")) {
+        out.bass_onset_grid = parseDoubleArray<16>(r["bass_onset_grid"], "rhythm.bass_onset_grid", errs);
+    } else {
+        errs.push_back("Missing rhythm.bass_onset_grid");
+    }
+    out.syncopation = reqNumField(r, "syncopation", 0.35, errs);
+    out.anticipation = reqNumField(r, "anticipation", 0.2, errs);
+    out.swing = reqNumField(r, "swing", 0.0, errs);
+    out.harmonic_pacing = reqNumField(r, "harmonic_pacing", 1.0, errs);
+    out.sustain_ratio = reqNumField(r, "sustain_ratio", 0.85, errs);
+    return out;
+}
+
+VoicingAxis voicingFromJson(const nlohmann::json& v, std::vector<std::string>& errs) {
+    VoicingAxis out;
+    out.register_low = v.value("register_low", 48);
+    out.register_high = v.value("register_high", 76);
+    out.center_pitch = v.value("center_pitch", 62);
+    out.spread_semitones = reqNumField(v, "spread_semitones", 14.0, errs);
+    out.min_notes = v.value("min_notes", 3);
+    out.max_notes = v.value("max_notes", 5);
+    out.extension_richness = reqNumField(v, "extension_richness", 0.6, errs);
+    out.drop2_prob = reqNumField(v, "drop2_prob", 0.25, errs);
+    out.inversion_prob = reqNumField(v, "inversion_prob", 0.4, errs);
+    out.voice_leading_tightness = reqNumField(v, "voice_leading_tightness", 0.8, errs);
+    out.sub_bass_clearance_midi = v.value("sub_bass_clearance_midi", 48);
+    out.bass_register_low = v.value("bass_register_low", 28);
+    out.bass_register_high = v.value("bass_register_high", 45);
+    return out;
+}
+
+MelodyAxis melodyFromJson(const nlohmann::json& m, std::vector<std::string>& errs) {
+    MelodyAxis out;
+    if (m.contains("interval_histogram")) {
+        out.interval_histogram = parseDoubleArray<25>(m["interval_histogram"], "melody.interval_histogram", errs);
+    } else {
+        errs.push_back("Missing melody.interval_histogram");
+    }
+    out.chord_tone_ratio = reqNumField(m, "chord_tone_ratio", 0.72, errs);
+    out.tension_tone_ratio = reqNumField(m, "tension_tone_ratio", 0.18, errs);
+    out.motif_density = reqNumField(m, "motif_density", 0.45, errs);
+    out.motif_repetition = reqNumField(m, "motif_repetition", 0.6, errs);
+    out.arch_contour = reqNumField(m, "arch_contour", 0.5, errs);
+    out.register_low = m.value("register_low", 64);
+    out.register_high = m.value("register_high", 86);
+    out.legato_ratio = reqNumField(m, "legato_ratio", 0.7, errs);
+    return out;
+}
+
+} // namespace
+
 nlohmann::json toJson(const StyleProfile& p) {
     nlohmann::json j;
     j["schema_version"] = p.schema_version;
@@ -262,74 +476,33 @@ nlohmann::json toJson(const StyleProfile& p) {
     j["default_bpm"] = p.default_bpm;
     j["time_signature"] = {{"numerator", p.time_sig_num}, {"denominator", p.time_sig_den}};
     j["source"] = p.source;
+    j["track_count"] = std::max(1, p.track_count);
+    if (!p.processed_tracks.empty()) j["processed_tracks"] = p.processed_tracks;
     if (!p.tags.empty()) j["tags"] = p.tags;
     if (!p.genre_source.empty()) j["genre_source"] = p.genre_source;
     if (!p.artist.empty()) j["artist"] = p.artist;
     if (!p.album.empty()) j["album"] = p.album;
 
-    // Harmony
-    nlohmann::json vocabJson = nlohmann::json::array();
-    for (const auto& entry : p.harmony.vocabulary) {
-        vocabJson.push_back({
-            {"symbol", entry.symbol},
-            {"degree", entry.chord.degree},
-            {"accidental", entry.chord.accidental},
-            {"quality", std::string(qualityName(entry.chord.quality))},
-            {"bass_degree_offset", entry.chord.bass_degree_offset},
-            {"weight", entry.weight},
-            {"cadence_weight", entry.cadence_weight}
-        });
+    j["harmony"] = harmonyToJson(p.harmony);
+    j["rhythm"] = rhythmToJson(p.rhythm);
+    j["voicing"] = voicingToJson(p.voicing);
+    j["melody"] = melodyToJson(p.melody);
+
+    if (!p.sections.empty()) {
+        nlohmann::json secObj = nlohmann::json::object();
+        for (const auto& [secKey, sec] : p.sections) {
+            if (!sec.populated) continue;
+            secObj[secKey] = {
+                {"harmony", harmonyToJson(sec.harmony)},
+                {"rhythm", rhythmToJson(sec.rhythm)},
+                {"voicing", voicingToJson(sec.voicing)},
+                {"melody", melodyToJson(sec.melody)}
+            };
+        }
+        if (!secObj.empty()) {
+            j["sections"] = std::move(secObj);
+        }
     }
-    j["harmony"] = {
-        {"tonic_pc", p.harmony.tonic_pc},
-        {"mode", std::string(modeName(p.harmony.mode))},
-        {"vocabulary", vocabJson},
-        {"transitions", p.harmony.transitions},
-        {"chromaticism", p.harmony.chromaticism}
-    };
-
-    // Rhythm
-    j["rhythm"] = {
-        {"subdivision", p.rhythm.subdivision},
-        {"chord_onset_grid", p.rhythm.chord_onset_grid},
-        {"melody_onset_grid", p.rhythm.melody_onset_grid},
-        {"bass_onset_grid", p.rhythm.bass_onset_grid},
-        {"syncopation", p.rhythm.syncopation},
-        {"anticipation", p.rhythm.anticipation},
-        {"swing", p.rhythm.swing},
-        {"harmonic_pacing", p.rhythm.harmonic_pacing},
-        {"sustain_ratio", p.rhythm.sustain_ratio}
-    };
-
-    // Voicing
-    j["voicing"] = {
-        {"register_low", p.voicing.register_low},
-        {"register_high", p.voicing.register_high},
-        {"center_pitch", p.voicing.center_pitch},
-        {"spread_semitones", p.voicing.spread_semitones},
-        {"min_notes", p.voicing.min_notes},
-        {"max_notes", p.voicing.max_notes},
-        {"extension_richness", p.voicing.extension_richness},
-        {"drop2_prob", p.voicing.drop2_prob},
-        {"inversion_prob", p.voicing.inversion_prob},
-        {"voice_leading_tightness", p.voicing.voice_leading_tightness},
-        {"sub_bass_clearance_midi", p.voicing.sub_bass_clearance_midi},
-        {"bass_register_low", p.voicing.bass_register_low},
-        {"bass_register_high", p.voicing.bass_register_high}
-    };
-
-    // Melody
-    j["melody"] = {
-        {"interval_histogram", p.melody.interval_histogram},
-        {"chord_tone_ratio", p.melody.chord_tone_ratio},
-        {"tension_tone_ratio", p.melody.tension_tone_ratio},
-        {"motif_density", p.melody.motif_density},
-        {"motif_repetition", p.melody.motif_repetition},
-        {"arch_contour", p.melody.arch_contour},
-        {"register_low", p.melody.register_low},
-        {"register_high", p.melody.register_high},
-        {"legato_ratio", p.melody.legato_ratio}
-    };
 
     return j;
 }
@@ -343,15 +516,7 @@ std::expected<StyleProfile, std::string> fromJson(const nlohmann::json& j) {
     std::vector<std::string> errs;
 
     auto reqNum = [&](const nlohmann::json& obj, const char* key, double fallback) -> double {
-        if (!obj.contains(key)) {
-            errs.push_back(std::string("Missing field: ") + key);
-            return fallback;
-        }
-        if (!obj[key].is_number()) {
-            errs.push_back(std::string("Field must be numeric: ") + key);
-            return fallback;
-        }
-        return obj[key].get<double>();
+        return reqNumField(obj, key, fallback, errs);
     };
 
     if (!j.contains("schema_version") || !j["schema_version"].is_number_integer()) {
@@ -370,6 +535,15 @@ std::expected<StyleProfile, std::string> fromJson(const nlohmann::json& j) {
     p.bpm_max = reqNum(j, "bpm_max", 175.0);
     p.default_bpm = reqNum(j, "default_bpm", 120.0);
     p.source = j.value("source", "preset");
+    p.track_count = std::max(1, j.value("track_count", 1));
+    if (j.contains("processed_tracks") && j["processed_tracks"].is_array()) {
+        for (const auto& t : j["processed_tracks"]) {
+            if (t.is_string()) {
+                auto s = t.get<std::string>();
+                if (!s.empty()) p.processed_tracks.push_back(std::move(s));
+            }
+        }
+    }
     if (j.contains("tags") && j["tags"].is_array()) {
         for (const auto& t : j["tags"]) {
             if (t.is_string()) {
@@ -387,137 +561,46 @@ std::expected<StyleProfile, std::string> fromJson(const nlohmann::json& j) {
         p.time_sig_den = j["time_signature"].value("denominator", 4);
     }
 
-    // Harmony
     if (!j.contains("harmony") || !j["harmony"].is_object()) {
         return std::unexpected("Missing 'harmony' object");
     }
-    {
-        const auto& h = j["harmony"];
-        p.harmony.tonic_pc = h.value("tonic_pc", 0);
-        if (const auto m = parseMode(h.value("mode", "minor"))) {
-            p.harmony.mode = *m;
-        } else {
-            errs.push_back("Invalid harmony.mode");
-        }
-        p.harmony.chromaticism = h.value("chromaticism", 0.15);
+    p.harmony = harmonyFromJson(j["harmony"], errs);
 
-        if (!h.contains("vocabulary") || !h["vocabulary"].is_array()) {
-            errs.push_back("Missing harmony.vocabulary array");
-        } else {
-            for (const auto& item : h["vocabulary"]) {
-                ChordVocabEntry entry;
-                entry.symbol = item.value("symbol", "");
-                if (item.contains("degree") && item.contains("quality")) {
-                    entry.chord.degree = item.value("degree", 1);
-                    entry.chord.accidental = item.value("accidental", 0);
-                    if (auto q = parseQuality(item.value("quality", "min"))) {
-                        entry.chord.quality = *q;
-                    } else {
-                        errs.push_back("Invalid chord quality in vocabulary for '" + entry.symbol + "'");
-                    }
-                    entry.chord.bass_degree_offset = item.value("bass_degree_offset", 0);
-                } else if (auto parsed = parseRomanChord(entry.symbol)) {
-                    entry.chord = *parsed;
-                } else {
-                    errs.push_back("Cannot parse Roman symbol '" + entry.symbol + "'");
-                }
-                if (entry.symbol.empty()) {
-                    entry.symbol = formatRomanChord(entry.chord);
-                }
-                entry.weight = item.value("weight", 1.0);
-                entry.cadence_weight = item.value("cadence_weight", 0.0);
-                p.harmony.vocabulary.push_back(std::move(entry));
-            }
-        }
-
-        if (h.contains("transitions") && h["transitions"].is_object()) {
-            for (auto it = h["transitions"].begin(); it != h["transitions"].end(); ++it) {
-                if (!it.value().is_object()) {
-                    errs.push_back("Transition row '" + it.key() + "' must be an object");
-                    continue;
-                }
-                std::map<std::string, double> row;
-                for (auto jt = it.value().begin(); jt != it.value().end(); ++jt) {
-                    if (!jt.value().is_number()) {
-                        errs.push_back("Non-numeric transition probability in '" + it.key() + "'");
-                        continue;
-                    }
-                    row[jt.key()] = jt.value().get<double>();
-                }
-                p.harmony.transitions[it.key()] = std::move(row);
-            }
-        }
-    }
-
-    // Rhythm
     if (!j.contains("rhythm") || !j["rhythm"].is_object()) {
         return std::unexpected("Missing 'rhythm' object");
     }
-    {
-        const auto& r = j["rhythm"];
-        p.rhythm.subdivision = r.value("subdivision", 16);
-        if (r.contains("chord_onset_grid")) {
-            p.rhythm.chord_onset_grid = parseDoubleArray<16>(r["chord_onset_grid"], "rhythm.chord_onset_grid", errs);
-        } else {
-            errs.push_back("Missing rhythm.chord_onset_grid");
-        }
-        if (r.contains("melody_onset_grid")) {
-            p.rhythm.melody_onset_grid = parseDoubleArray<16>(r["melody_onset_grid"], "rhythm.melody_onset_grid", errs);
-        } else {
-            errs.push_back("Missing rhythm.melody_onset_grid");
-        }
-        if (r.contains("bass_onset_grid")) {
-            p.rhythm.bass_onset_grid = parseDoubleArray<16>(r["bass_onset_grid"], "rhythm.bass_onset_grid", errs);
-        } else {
-            errs.push_back("Missing rhythm.bass_onset_grid");
-        }
-        p.rhythm.syncopation = reqNum(r, "syncopation", 0.35);
-        p.rhythm.anticipation = reqNum(r, "anticipation", 0.2);
-        p.rhythm.swing = reqNum(r, "swing", 0.0);
-        p.rhythm.harmonic_pacing = reqNum(r, "harmonic_pacing", 1.0);
-        p.rhythm.sustain_ratio = reqNum(r, "sustain_ratio", 0.85);
-    }
+    p.rhythm = rhythmFromJson(j["rhythm"], errs);
 
-    // Voicing
     if (!j.contains("voicing") || !j["voicing"].is_object()) {
         return std::unexpected("Missing 'voicing' object");
     }
-    {
-        const auto& v = j["voicing"];
-        p.voicing.register_low = v.value("register_low", 48);
-        p.voicing.register_high = v.value("register_high", 76);
-        p.voicing.center_pitch = v.value("center_pitch", 62);
-        p.voicing.spread_semitones = reqNum(v, "spread_semitones", 14.0);
-        p.voicing.min_notes = v.value("min_notes", 3);
-        p.voicing.max_notes = v.value("max_notes", 5);
-        p.voicing.extension_richness = reqNum(v, "extension_richness", 0.6);
-        p.voicing.drop2_prob = reqNum(v, "drop2_prob", 0.25);
-        p.voicing.inversion_prob = reqNum(v, "inversion_prob", 0.4);
-        p.voicing.voice_leading_tightness = reqNum(v, "voice_leading_tightness", 0.8);
-        p.voicing.sub_bass_clearance_midi = v.value("sub_bass_clearance_midi", 48);
-        p.voicing.bass_register_low = v.value("bass_register_low", 28);
-        p.voicing.bass_register_high = v.value("bass_register_high", 45);
-    }
+    p.voicing = voicingFromJson(j["voicing"], errs);
 
-    // Melody
     if (!j.contains("melody") || !j["melody"].is_object()) {
         return std::unexpected("Missing 'melody' object");
     }
-    {
-        const auto& m = j["melody"];
-        if (m.contains("interval_histogram")) {
-            p.melody.interval_histogram = parseDoubleArray<25>(m["interval_histogram"], "melody.interval_histogram", errs);
-        } else {
-            errs.push_back("Missing melody.interval_histogram");
+    p.melody = melodyFromJson(j["melody"], errs);
+
+    if (j.contains("sections") && j["sections"].is_object()) {
+        for (auto it = j["sections"].begin(); it != j["sections"].end(); ++it) {
+            if (!it.value().is_object()) continue;
+            const auto& secObj = it.value();
+            SectionDNA sec;
+            sec.harmony = (secObj.contains("harmony") && secObj["harmony"].is_object())
+                              ? harmonyFromJson(secObj["harmony"], errs)
+                              : p.harmony;
+            sec.rhythm = (secObj.contains("rhythm") && secObj["rhythm"].is_object())
+                             ? rhythmFromJson(secObj["rhythm"], errs)
+                             : p.rhythm;
+            sec.voicing = (secObj.contains("voicing") && secObj["voicing"].is_object())
+                              ? voicingFromJson(secObj["voicing"], errs)
+                              : p.voicing;
+            sec.melody = (secObj.contains("melody") && secObj["melody"].is_object())
+                             ? melodyFromJson(secObj["melody"], errs)
+                             : p.melody;
+            sec.populated = true;
+            p.sections[it.key()] = std::move(sec);
         }
-        p.melody.chord_tone_ratio = reqNum(m, "chord_tone_ratio", 0.72);
-        p.melody.tension_tone_ratio = reqNum(m, "tension_tone_ratio", 0.18);
-        p.melody.motif_density = reqNum(m, "motif_density", 0.45);
-        p.melody.motif_repetition = reqNum(m, "motif_repetition", 0.6);
-        p.melody.arch_contour = reqNum(m, "arch_contour", 0.5);
-        p.melody.register_low = m.value("register_low", 64);
-        p.melody.register_high = m.value("register_high", 86);
-        p.melody.legato_ratio = reqNum(m, "legato_ratio", 0.7);
     }
 
     if (!errs.empty()) {
@@ -579,6 +662,56 @@ std::expected<void, std::string> saveToFile(const StyleProfile& profile, const s
         return std::unexpected("Failed while writing file: " + path.string());
     }
     return {};
+}
+
+SectionDNA deriveSectionDNA(const StyleProfile& profile, SongSection section) {
+    SectionDNA sec;
+    sec.harmony = profile.harmony;
+    sec.rhythm = profile.rhythm;
+    sec.voicing = profile.voicing;
+    sec.melody = profile.melody;
+    sec.populated = true;
+
+    if (section == SongSection::Intro) {
+        sec.rhythm.harmonic_pacing = std::clamp(sec.rhythm.harmonic_pacing * 0.55, 0.25, 4.0);
+        sec.rhythm.sustain_ratio = std::clamp(sec.rhythm.sustain_ratio * 1.15, 0.2, 1.5);
+        sec.rhythm.syncopation = std::clamp(sec.rhythm.syncopation * 0.65, 0.0, 1.0);
+        for (size_t i = 0; i < 16; ++i) {
+            sec.rhythm.bass_onset_grid[i] *= (i % 8 == 0) ? 1.0 : 0.35;
+            sec.rhythm.melody_onset_grid[i] *= 0.55;
+        }
+        sec.voicing.register_low = std::min(sec.voicing.register_high - 6, sec.voicing.register_low + 4);
+        sec.voicing.center_pitch = std::clamp(sec.voicing.center_pitch + 2, sec.voicing.register_low, sec.voicing.register_high);
+        sec.voicing.spread_semitones = std::clamp(sec.voicing.spread_semitones * 0.85, 5.0, 30.0);
+        sec.melody.motif_density = std::clamp(sec.melody.motif_density * 0.60, 0.1, 1.0);
+        for (auto& v : sec.harmony.vocabulary) {
+            if (v.chord.degree == 1 && v.chord.accidental == 0) {
+                v.weight *= 1.5;
+            }
+        }
+        normalizeHarmonyAndMelody(sec.harmony, sec.melody);
+    } else if (section == SongSection::Outro) {
+        sec.rhythm.sustain_ratio = std::clamp(sec.rhythm.sustain_ratio * 1.20, 0.2, 1.5);
+        sec.rhythm.syncopation = std::clamp(sec.rhythm.syncopation * 0.75, 0.0, 1.0);
+        sec.melody.motif_density = std::clamp(sec.melody.motif_density * 0.70, 0.1, 1.0);
+        for (auto& v : sec.harmony.vocabulary) {
+            if (v.chord.degree == 1 && v.chord.accidental == 0) {
+                v.cadence_weight += 0.5;
+                v.weight *= 1.35;
+            }
+        }
+        normalizeHarmonyAndMelody(sec.harmony, sec.melody);
+    }
+    return sec;
+}
+
+SectionDNA resolveSectionDNA(const StyleProfile& profile, SongSection section) {
+    const std::string key(songSectionName(section));
+    if (const auto it = profile.sections.find(key);
+        it != profile.sections.end() && it->second.populated && !it->second.harmony.vocabulary.empty()) {
+        return it->second;
+    }
+    return deriveSectionDNA(profile, section);
 }
 
 } // namespace style_scaler

@@ -47,9 +47,9 @@ public:
         return is_capturing_.load(std::memory_order_acquire);
     }
 
-    // Audio-thread only: lock-free, allocation-free
+    // Audio-thread only: lock-free, allocation-free true circular buffer
     void pushBlock(const float* const* channelData, int numChannels, int numSamples) noexcept {
-        if (!is_capturing_.load(std::memory_order_acquire) || numChannels <= 0 || numSamples <= 0) {
+        if (!is_capturing_.load(std::memory_order_acquire) || numChannels <= 0 || numSamples <= 0 || buffer_.empty()) {
             peak_level_.store(0.0f, std::memory_order_relaxed);
             return;
         }
@@ -67,16 +67,12 @@ public:
             }
             mono *= invCh;
             blockPeak = std::max(blockPeak, std::abs(mono));
-            if (pos < cap) {
-                buffer_[pos++] = mono;
-            }
+            buffer_[pos % cap] = mono;
+            ++pos;
         }
 
         written_samples_.store(pos, std::memory_order_release);
         peak_level_.store(blockPeak, std::memory_order_relaxed);
-        if (pos >= cap) {
-            is_capturing_.store(false, std::memory_order_release);
-        }
 
         in_push_.store(false, std::memory_order_release);
     }
@@ -86,21 +82,34 @@ public:
         double sample_rate = 44100.0;
     };
 
-    // Message / background thread: stops capture and extracts a snapshot copy
+    // Message / background thread: stops capture and extracts linearized most recent samples
     CapturedAudio extractSnapshot() {
         stopCapture();
         while (in_push_.load(std::memory_order_acquire)) {
             // Brief spin until active audio callback push exits (microseconds)
         }
-        const size_t count = std::min(buffer_.size(), written_samples_.load(std::memory_order_acquire));
+        const size_t cap = buffer_.size();
+        const size_t totalWritten = written_samples_.load(std::memory_order_acquire);
+        const size_t count = std::min(cap, totalWritten);
         CapturedAudio out;
         out.sample_rate = sample_rate_;
-        out.mono_samples.assign(buffer_.begin(), buffer_.begin() + static_cast<std::ptrdiff_t>(count));
+        out.mono_samples.resize(count);
+        if (count > 0) {
+            if (totalWritten <= cap) {
+                std::copy_n(buffer_.begin(), count, out.mono_samples.begin());
+            } else {
+                const size_t head = totalWritten % cap;
+                const size_t firstPart = cap - head;
+                std::copy_n(buffer_.begin() + static_cast<std::ptrdiff_t>(head), firstPart, out.mono_samples.begin());
+                std::copy_n(buffer_.begin(), head, out.mono_samples.begin() + static_cast<std::ptrdiff_t>(firstPart));
+            }
+        }
         return out;
     }
 
     double capturedSeconds() const noexcept {
-        return static_cast<double>(written_samples_.load(std::memory_order_relaxed)) / std::max(1.0, sample_rate_);
+        const size_t stored = std::min(buffer_.size(), written_samples_.load(std::memory_order_relaxed));
+        return static_cast<double>(stored) / std::max(1.0, sample_rate_);
     }
 
     float peakLevel() const noexcept {

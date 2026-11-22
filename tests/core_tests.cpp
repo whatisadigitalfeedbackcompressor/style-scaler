@@ -70,8 +70,10 @@ TEST_CASE("StyleProfile JSON round-trip and validation", "[schema]") {
     CHECK_FALSE(fromJson(badReg).has_value());
 }
 
-TEST_CASE("All 4 starter genre presets load and pass strict validation", "[presets]") {
-    const std::vector<std::string> ids = {"90s_hiphop", "trap", "liquid_dnb", "neuro_dnb"};
+TEST_CASE("All 6 starter genre presets load, pass validation, and have non-degenerate Markov entropy", "[presets]") {
+    const std::vector<std::string> ids = {
+        "90s_hiphop", "trap", "liquid_dnb", "neuro_dnb", "neo_soul", "melodic_house"
+    };
     for (const auto& id : ids) {
         const fs::path p = presetsRoot() / (id + ".json");
         INFO("Checking preset: " << p.string());
@@ -83,6 +85,15 @@ TEST_CASE("All 4 starter genre presets load and pass strict validation", "[prese
         REQUIRE(vr.valid);
         CHECK(loaded->id == id);
         CHECK_FALSE(loaded->harmony.vocabulary.empty());
+
+        for (const auto& [fromSym, row] : loaded->harmony.transitions) {
+            if (row.size() >= 2) {
+                double maxP = 0.0;
+                for (const auto& [toSym, pr] : row) maxP = std::max(maxP, pr);
+                INFO("Preset " << id << " row " << fromSym << " maxP=" << maxP);
+                CHECK(maxP < 0.70);
+            }
+        }
     }
 
     const auto hiphop = loadFromFile(presetsRoot() / "90s_hiphop.json");
@@ -497,4 +508,103 @@ TEST_CASE("AudioMetadataReader parses ID3v2.3, ID3v1, FLAC, WAV, MIDI and key/ge
         REQUIRE(rt->artist == "Sample Artist");
         REQUIRE(rt->album == "Sample Album");
     }
+}
+
+TEST_CASE("Transcribed audio TimedNoteSec yields non-empty melody, phi0 alignment, and Intro/Chorus/Outro sections", "[analyzer][sections]") {
+    // 16-bar song at 120 BPM (0.5 s/beat) shifted by +0.31s silence pre-roll,
+    // using only piano (prog=0) + bass (prog=33) so ch2 is initially absent.
+    constexpr double preRoll = 0.31;
+    std::vector<TimedNoteSec> notes;
+    for (int bar = 0; bar < 16; ++bar) {
+        const double bSec = preRoll + static_cast<double>(bar) * 2.0;
+        // Intro (bars 0..3): sparse pad; Chorus (4..11): dense + melody; Outro (12..15): sustained
+        notes.push_back({bSec, bSec + 1.4, 36, 105, 33, false});
+        notes.push_back({bSec, bSec + 1.5, 48, 88, 0, false});
+        notes.push_back({bSec, bSec + 1.5, 55, 88, 0, false});
+        notes.push_back({bSec, bSec + 1.5, 63, 88, 0, false});
+        if (bar >= 4 && bar < 12) {
+            notes.push_back({bSec + 0.5, bSec + 0.9, 72, 96, 0, false});
+            notes.push_back({bSec + 1.0, bSec + 1.4, 75, 96, 0, false});
+            notes.push_back({bSec + 1.5, bSec + 1.9, 79, 96, 0, false});
+        } else if (bar < 4) {
+            notes.push_back({bSec + 1.0, bSec + 1.8, 72, 76, 0, false});
+        }
+    }
+
+    AnalysisOptions opts;
+    opts.id = "timed_sections_test";
+    opts.name = "Timed Sections";
+    opts.bpm_hint = 120.0;
+    const StyleProfile prof = MidiStyleAnalyzer::analyzeTimed(notes, opts);
+    REQUIRE(validate(prof).valid);
+
+    // Beat-phase recovery aligns downbeat back near step 0
+    CHECK(prof.rhythm.chord_onset_grid[0] > 0.5);
+
+    // Non-empty melody generation
+    const auto prog = ProgressionGenerator::generateProgression(prof, 4, 42ULL);
+    const auto pat = PatternGenerator::generatePattern(prof, prog, PerformParams{}, 42ULL);
+    CHECK_FALSE(pat.melody.empty());
+
+    // Intro / Chorus / Outro sections populated & distinct
+    REQUIRE(prof.sections.count("intro") == 1);
+    REQUIRE(prof.sections.count("chorus") == 1);
+    REQUIRE(prof.sections.count("outro") == 1);
+    CHECK(prof.sections.at("intro").populated);
+    CHECK(prof.sections.at("chorus").populated);
+    CHECK(prof.sections.at("outro").populated);
+    CHECK(prof.sections.at("chorus").melody.motif_density >= prof.sections.at("intro").melody.motif_density);
+
+    // StyleBlender resolves requested SongSection cleanly
+    BlendParams bpIntro;
+    bpIntro.section = SongSection::Intro;
+    const auto blendedIntro = StyleBlender::blend(prof, prof, bpIntro);
+    CHECK(validate(blendedIntro).valid);
+}
+
+TEST_CASE("MidiStyleAnalyzer::mergeProfiles weights transitions, increments track_count, and deduplicates tracks", "[analyzer][merge]") {
+    auto a = makeDefaultStyleProfile();
+    a.id = "merged_genre";
+    a.track_count = 2;
+    a.processed_tracks = {"hash_a", "hash_b"};
+
+    auto b = makeDefaultStyleProfile();
+    b.id = "merged_genre";
+    b.track_count = 1;
+    b.default_bpm = 135.0;
+    b.processed_tracks = {"hash_b", "hash_c"};
+
+    const StyleProfile merged = MidiStyleAnalyzer::mergeProfiles(a, b);
+    REQUIRE(validate(merged).valid);
+    CHECK(merged.track_count == 3);
+    CHECK(merged.processed_tracks == std::vector<std::string>{"hash_a", "hash_b", "hash_c"});
+    CHECK(merged.default_bpm == Approx((2.0 * 120.0 + 135.0) / 3.0).margin(0.1));
+}
+
+TEST_CASE("Bijective voice leading avoids low-interval mud and 4-bar melody avoids boundary pinning", "[voicing][melody]") {
+    const auto liquid = loadFromFile(presetsRoot() / "liquid_dnb.json");
+    REQUIRE(liquid.has_value());
+
+    std::vector<int> prev;
+    for (const auto& entry : liquid->harmony.vocabulary) {
+        const auto notes = VoicingEngine::voiceChord(
+            entry.chord, liquid->harmony.tonic_pc, liquid->harmony.mode, liquid->voicing, prev);
+        for (size_t k = 0; k + 1 < notes.size(); ++k) {
+            if (notes[k + 1] < 60) {
+                CHECK((notes[k + 1] - notes[k]) >= 3);
+            }
+        }
+        prev = notes;
+    }
+
+    const auto prog = ProgressionGenerator::generateProgression(*liquid, 16, 777ULL);
+    const auto pat = PatternGenerator::generatePattern(*liquid, prog, PerformParams{}, 777ULL);
+    REQUIRE_FALSE(pat.melody.empty());
+    const int melLo = std::max(liquid->melody.register_low, liquid->voicing.sub_bass_clearance_midi + 7);
+    const int melHi = std::max(melLo + 12, liquid->melody.register_high);
+    int pinned = 0;
+    for (const auto& ev : pat.melody) {
+        if (ev.pitch == melLo || ev.pitch == melHi) ++pinned;
+    }
+    CHECK(pinned < static_cast<int>(pat.melody.size()) / 2);
 }

@@ -27,6 +27,7 @@ struct ProgressionSlot {
 struct PerformParams {
     bool groove_sync = true;
     TempoScale tempo_scale = TempoScale::Normal;
+    SongSection section = SongSection::Chorus;
     double voicing_spread = 0.5;   // 0..1 UI spread multiplier
     double melody_density = 0.5;   // 0..1 UI melody density control
     double humanize = 0.15;        // 0..1 timing & velocity humanization

@@ -38,6 +38,7 @@ void printUsage() {
         "  --groove <0|1>        Groove sync toggle [1]\n"
         "  --key <C..B>          Key root override (e.g. C, F#, Bb)\n"
         "  --mode <name>         Mode override (minor, major, dorian, phrygian, mixolydian, ...)\n"
+        "  --section <name>      Song section DNA (intro, chorus, outro) [chorus]\n"
         "  --out-profile <json>  Also write blended StyleProfile JSON\n\n"
         "Usage (Analyze .mid into StyleProfile JSON):\n"
         "  style_cli --analyze <input.mid> --out-profile <out.json> [--id <id>] [--name <name>] [--genre <genre>]\n";
@@ -149,6 +150,15 @@ int main(int argc, char* argv[]) {
                 blendParams.mode_override = *m;
             } else {
                 std::cerr << "Invalid --mode: " << mStr << "\n";
+                return 2;
+            }
+        } else if (flag == "--section") {
+            const auto sStr = needVal("--section");
+            if (auto sec = parseSongSection(sStr)) {
+                blendParams.section = *sec;
+                perform.section = *sec;
+            } else {
+                std::cerr << "Invalid --section: " << sStr << "\n";
                 return 2;
             }
         } else if (flag == "--out") {

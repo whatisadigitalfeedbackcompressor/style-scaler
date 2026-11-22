@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "catalog_name": "StyleScaler Preset Catalog",
-  "updated_at": "2026-11-22T16:34:03Z",
+  "updated_at": "2026-11-22T19:22:58Z",
   "genres": {
     "Drum & Bass": [
       "liquid_dnb",
@@ -9,6 +9,12 @@
     ],
     "Hip-Hop": [
       "90s_hiphop"
+    ],
+    "House / Melodic Techno": [
+      "melodic_house"
+    ],
+    "R&B / Neo-Soul": [
+      "neo_soul"
     ],
     "Trap": [
       "trap"
@@ -21,13 +27,13 @@
       "genre": "Hip-Hop",
       "description": "Swung Rhodes/jazz minor 9th harmony, beat-4-and anticipations, warm mid voicings",
       "file": "styles/90s_hiphop.json",
-      "sha256": "847833b0e41271acf7c82c75fe2195a0165f667e141347984f28931b79807b4b",
+      "sha256": "8064776abc3c825a94c462e15a82b93d25c0216f889c6f7af27385665bf20f0a",
       "bpm_min": 86.0,
       "bpm_max": 96.0,
       "default_bpm": 92.0,
       "mode": "dorian",
       "tonic_pc": 0,
-      "updated_at": "2026-11-22T16:34:03Z"
+      "updated_at": "2026-11-22T19:22:58Z"
     },
     {
       "id": "liquid_dnb",
@@ -35,13 +41,41 @@
       "genre": "Drum & Bass",
       "description": "Lush extended 9th/11th harmony, wide open voicings with C3 sub-bass clearance, lyrical melody",
       "file": "styles/liquid_dnb.json",
-      "sha256": "e7c6bf7008bb9add90fe77397652a92cfd6627b33125ebff150e5c0c17756aff",
+      "sha256": "6a106ee64cd2c7106b823697d888f822e7589188d5add64eef29a4ab7dc71572",
       "bpm_min": 170.0,
       "bpm_max": 176.0,
       "default_bpm": 174.0,
       "mode": "minor",
       "tonic_pc": 0,
-      "updated_at": "2026-11-22T16:34:03Z"
+      "updated_at": "2026-11-22T19:22:58Z"
+    },
+    {
+      "id": "melodic_house",
+      "name": "Melodic House",
+      "genre": "House / Melodic Techno",
+      "description": "Emotional minor-key arpeggiated harmony, driving off-beat bass, soaring 4-bar phrases",
+      "file": "styles/melodic_house.json",
+      "sha256": "42ab4f04cae8bb08a33636b5a3960902fbdba031d24006f8c36494cbeba42e59",
+      "bpm_min": 120.0,
+      "bpm_max": 128.0,
+      "default_bpm": 124.0,
+      "mode": "minor",
+      "tonic_pc": 0,
+      "updated_at": "2026-11-22T19:22:58Z"
+    },
+    {
+      "id": "neo_soul",
+      "name": "Neo-Soul",
+      "genre": "R&B / Neo-Soul",
+      "description": "Dilla-swung extended 9th/11th/13th harmony, lush Rhodes voicings, expressive pickup melodies",
+      "file": "styles/neo_soul.json",
+      "sha256": "5acb3a625d7e321c619b8c8e525765835a3cf72c90a1062eaec00a751803b6da",
+      "bpm_min": 82.0,
+      "bpm_max": 98.0,
+      "default_bpm": 88.0,
+      "mode": "dorian",
+      "tonic_pc": 7,
+      "updated_at": "2026-11-22T19:22:58Z"
     },
     {
       "id": "neuro_dnb",
@@ -49,13 +83,13 @@
       "genre": "Drum & Bass",
       "description": "Phrygian/chromatic 16th stabs, stark tense voicings with E3 sub-bass clearance, angular leads",
       "file": "styles/neuro_dnb.json",
-      "sha256": "8b1fcf896e73f697be482d5547dcfeda21f75054e06158b19028acf514cfe63c",
+      "sha256": "879ef61d27871fc54e21569804c0d5bb4103307e536604dfb17e7f7e8e82f56f",
       "bpm_min": 172.0,
       "bpm_max": 176.0,
       "default_bpm": 174.0,
       "mode": "phrygian",
       "tonic_pc": 0,
-      "updated_at": "2026-11-22T16:34:03Z"
+      "updated_at": "2026-11-22T19:22:58Z"
     },
     {
       "id": "trap",
@@ -63,13 +97,13 @@
       "genre": "Trap",
       "description": "Phrygian/Aeolian sparse dark pads, deep 808 sub patterns, eerie upper bells",
       "file": "styles/trap.json",
-      "sha256": "1673d51bb6f123042877459facef3d6282546684ff7338d8793e936fd4de1ad8",
+      "sha256": "515e076b12bf806d676e965376cdb3dc1c38fae73a8196f99dacc51bb560af74",
       "bpm_min": 130.0,
       "bpm_max": 150.0,
       "default_bpm": 140.0,
       "mode": "phrygian",
       "tonic_pc": 0,
-      "updated_at": "2026-11-22T16:34:03Z"
+      "updated_at": "2026-11-22T19:22:58Z"
     }
   ]
 }

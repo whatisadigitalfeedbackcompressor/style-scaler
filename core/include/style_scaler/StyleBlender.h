@@ -13,6 +13,7 @@ struct BlendParams {
     double voicing = 0.0;
     double melody = 0.0;
     TempoScale tempo_scale = TempoScale::Normal;
+    SongSection section = SongSection::Chorus;
     std::optional<int> key_override_pc;
     std::optional<Mode> mode_override;
 };

@@ -101,15 +101,14 @@ std::vector<int> computeBaseChordTones(const RomanChord& chord,
 
 double computeVoiceLeadingDistance(const std::vector<int>& a, const std::vector<int>& b) {
     if (a.empty() || b.empty()) return 0.0;
+    const size_t m = std::max(a.size(), b.size());
     double total = 0.0;
-    for (int p : b) {
-        int best = 127;
-        for (int q : a) {
-            best = std::min(best, std::abs(p - q));
-        }
-        total += static_cast<double>(best);
+    for (size_t k = 0; k < m; ++k) {
+        const int pa = a[(k * a.size()) / m];
+        const int pb = b[(k * b.size()) / m];
+        total += static_cast<double>(std::abs(pa - pb));
     }
-    return total / static_cast<double>(b.size());
+    return total / static_cast<double>(m);
 }
 
 } // namespace
@@ -501,6 +500,33 @@ std::vector<int> VoicingEngine::voiceChord(
         if (!prevVoicing.empty()) {
             const double vl = computeVoiceLeadingDistance(prevVoicing, c);
             cost += (0.5 + 2.2 * voicing.voice_leading_tightness) * vl;
+
+            // Guide-tone resolution bonus for 0..2 semitone motion onto 3rd or 7th of target chord
+            if (pcs.size() >= 2) {
+                const int thirdPc = pcs[1];
+                const int seventhPc = (pcs.size() >= 4) ? pcs[3] : -1;
+                for (int p : c) {
+                    const int pc = normalizePitchClass(p);
+                    if (pc == thirdPc || (seventhPc >= 0 && pc == seventhPc)) {
+                        for (int qp : prevVoicing) {
+                            if (std::abs(p - qp) <= 2) {
+                                cost -= 0.8;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Low-interval clarity penalty: avoid adjacent voices < 4 semitones below MIDI 60
+        for (size_t k = 0; k + 1 < c.size(); ++k) {
+            const int gap = c[k + 1] - c[k];
+            if (c[k + 1] < 60 && gap < 4) {
+                cost += 6.0 * static_cast<double>(4 - gap);
+            } else if (c[k] < 54 && gap < 5) {
+                cost += 3.5;
+            }
         }
 
         // Encourage root or non-root according to inversion_prob when Auto
@@ -595,11 +621,19 @@ GeneratedPattern PatternGenerator::generatePattern(
             const auto& notes = slotVoicings[s];
             if (notes.empty()) continue;
 
-            if (!perform.groove_sync) {
-                const double dur = std::max(0.25, slot.duration_beats * std::clamp(profile.rhythm.sustain_ratio, 0.35, 0.98));
+            const bool isLastSlot = (s + 1 == progression.size());
+            const double introGain = (perform.section == SongSection::Intro)
+                                         ? (0.76 + 0.24 * (slot.start_beat / std::max(1.0, totalBeats)))
+                                         : 1.0;
+
+            if (!perform.groove_sync || (perform.section == SongSection::Outro && isLastSlot)) {
+                const double sustainMult = (perform.section == SongSection::Outro && isLastSlot)
+                                               ? 0.96
+                                               : std::clamp(profile.rhythm.sustain_ratio, 0.35, 0.98);
+                const double dur = std::max(0.25, slot.duration_beats * sustainMult);
                 for (size_t v = 0; v < notes.size(); ++v) {
                     const double strum = static_cast<double>(v) * 0.012 * humanize;
-                    const int vel = std::clamp(static_cast<int>(std::llround(92.0 + rng.nextRange(-8.0, 8.0) * humanize)), 40, 120);
+                    const int vel = std::clamp(static_cast<int>(std::llround((92.0 + rng.nextRange(-8.0, 8.0) * humanize) * introGain)), 40, 120);
                     NoteEvent ev;
                     ev.onset_beats = std::min(totalBeats - 0.05, slot.start_beat + strum);
                     ev.duration_beats = std::min(dur, totalBeats - ev.onset_beats);
@@ -652,7 +686,10 @@ GeneratedPattern PatternGenerator::generatePattern(
                 const double dur = std::clamp(maxAvail * profile.rhythm.sustain_ratio, 0.10, maxAvail * 0.96);
 
                 const double onset = applySwingAndHumanize(rawOnset, step16);
-                const int baseVel = (step16 % 4 == 0) ? 98 : 84;
+                const int baseVel = static_cast<int>(std::llround(((step16 % 4 == 0) ? 98.0 : 84.0) *
+                                    ((perform.section == SongSection::Intro)
+                                         ? (0.76 + 0.24 * (rawOnset / std::max(1.0, totalBeats)))
+                                         : 1.0)));
                 for (size_t v = 0; v < notes.size(); ++v) {
                     const double strum = static_cast<double>(v) * 0.01 * humanize;
                     const int vel = std::clamp(static_cast<int>(std::llround(baseVel + rng.nextRange(-9.0, 9.0) * humanize)), 35, 124);
@@ -677,44 +714,67 @@ GeneratedPattern PatternGenerator::generatePattern(
         // Density combines profile motif_density and perform.melody_density
         const double densityFactor = std::clamp(0.35 + 1.15 * (0.5 * profile.melody.motif_density + 0.5 * perform.melody_density), 0.15, 1.4);
 
-        // Build a 16-step motif pattern (onsets + interval direction hints)
+        // Build A-A'-B-Cadence 16-step motif patterns
         const int motifSteps = 16;
-        std::vector<bool> motifMask(motifSteps, false);
+        std::vector<bool> motifMaskA(motifSteps, false);
+        std::vector<bool> motifMaskB(motifSteps, false);
         std::vector<int> motifStepsSigned(motifSteps, 0);
+        std::vector<double> hw(profile.melody.interval_histogram.begin(), profile.melody.interval_histogram.end());
         for (int k = 0; k < motifSteps; ++k) {
             const double p = profile.rhythm.melody_onset_grid[static_cast<size_t>(k)] * densityFactor;
             if ((k == 0 && rng.nextDouble() < 0.75) || rng.nextDouble() < std::clamp(p * 0.72, 0.0, 0.92)) {
-                motifMask[static_cast<size_t>(k)] = true;
+                motifMaskA[static_cast<size_t>(k)] = true;
             }
-            // Draw interval step from interval_histogram
-            std::vector<double> hw(profile.melody.interval_histogram.begin(), profile.melody.interval_histogram.end());
+            if ((k == 0 && rng.nextDouble() < 0.80) || rng.nextDouble() < std::clamp(p * 0.78, 0.0, 0.92)) {
+                motifMaskB[static_cast<size_t>(k)] = true;
+            }
             const int rawInterval = static_cast<int>(sampleWeightedIndex(hw, rng)) - 12;
             motifStepsSigned[static_cast<size_t>(k)] = rawInterval;
         }
 
-        // Build full timeline of melody onset times using motif repetition
+        // Build full timeline of melody onset times with breathing space at bar 2 / bar 4 endings
         const int totalSteps = std::max(1, static_cast<int>(std::floor(totalBeats / stepBeats + 1e-6)));
-        std::vector<std::pair<double, int>> melOnsets; // (beat, motifStepIdx)
+        std::vector<std::pair<double, int>> melOnsets; // (beat, stepGlobal)
         for (int g = 0; g < totalSteps; ++g) {
+            const double beat = static_cast<double>(g) * stepBeats;
+            const int barIdx = static_cast<int>(beat / beatsPerBar);
             const int motifIdx = g % motifSteps;
+            const int phraseBar = barIdx % 4;
+            const double beatIn2BarPhrase = std::fmod(beat, 2.0 * beatsPerBar);
+
+            // Automatic breathing space at the end of bar 2 and bar 4
+            if (beatIn2BarPhrase >= (2.0 * beatsPerBar - 0.75) && (g % 4 != 0) && rng.nextDouble() < 0.72) {
+                continue;
+            }
+            if (perform.section == SongSection::Outro && beat >= totalBeats - beatsPerBar && (g % 4 != 0)) {
+                continue;
+            }
+
             bool fire = false;
-            if (g < motifSteps) {
-                fire = motifMask[static_cast<size_t>(motifIdx)];
-            } else {
+            if (phraseBar == 0) {
+                fire = motifMaskA[static_cast<size_t>(motifIdx)];
+            } else if (phraseBar == 1) {
                 const bool reuseMotif = rng.nextDouble() < profile.melody.motif_repetition;
-                if (reuseMotif) {
-                    fire = motifMask[static_cast<size_t>(motifIdx)];
-                } else {
-                    const double p = profile.rhythm.melody_onset_grid[static_cast<size_t>(motifIdx)] * densityFactor;
-                    fire = rng.nextDouble() < std::clamp(p * 0.70, 0.0, 0.90);
-                }
+                fire = reuseMotif
+                           ? motifMaskA[static_cast<size_t>(motifIdx)]
+                           : (rng.nextDouble() < std::clamp(profile.rhythm.melody_onset_grid[static_cast<size_t>(motifIdx)] * densityFactor * 0.70, 0.0, 0.90));
+            } else if (phraseBar == 2) {
+                fire = motifMaskB[static_cast<size_t>(motifIdx)];
+            } else {
+                const bool reuseMotif = rng.nextDouble() < profile.melody.motif_repetition * 0.75;
+                fire = reuseMotif
+                           ? motifMaskA[static_cast<size_t>(motifIdx)]
+                           : (rng.nextDouble() < std::clamp(profile.rhythm.melody_onset_grid[static_cast<size_t>(motifIdx)] * densityFactor * 0.65, 0.0, 0.85));
             }
             if (fire) {
-                melOnsets.emplace_back(static_cast<double>(g) * stepBeats, g);
+                melOnsets.emplace_back(beat, g);
             }
         }
 
-        int prevPitch = std::clamp((melLo + melHi) / 2, melLo, melHi);
+        const int centerPitch = (melLo + melHi) / 2;
+        const int halfSpan = std::max(4, (melHi - melLo) / 3);
+        int prevPitch = std::clamp(centerPitch, melLo, melHi);
+
         for (size_t i = 0; i < melOnsets.size(); ++i) {
             const double rawBeat = melOnsets[i].first;
             const int stepGlobal = melOnsets[i].second;
@@ -723,12 +783,17 @@ GeneratedPattern PatternGenerator::generatePattern(
             const auto& slot = progression[slotIdx];
             const auto cpcs = chordPitchClasses(slot.chord, profile.harmony.tonic_pc, profile.harmony.mode);
 
+            const double phraseBarPos = std::fmod(rawBeat / beatsPerBar, 4.0) / 4.0;
+            const bool isCadenceNote = (phraseBarPos >= 0.75) || (i + 1 == melOnsets.size());
+
             // Determine candidate pitches inside [melLo, melHi]
             std::vector<int> allowedPitches;
             const bool isStrongBeat = (stepGlobal % 4 == 0);
-            const double targetChordToneP = isStrongBeat
-                                                ? std::clamp(profile.melody.chord_tone_ratio + 0.15, 0.0, 0.98)
-                                                : profile.melody.chord_tone_ratio;
+            const double targetChordToneP = isCadenceNote
+                                                ? 0.94
+                                                : (isStrongBeat
+                                                       ? std::clamp(profile.melody.chord_tone_ratio + 0.15, 0.0, 0.98)
+                                                       : profile.melody.chord_tone_ratio);
             const bool pickChordTone = rng.nextDouble() < targetChordToneP;
 
             if (pickChordTone && !cpcs.empty()) {
@@ -750,11 +815,16 @@ GeneratedPattern PatternGenerator::generatePattern(
                 allowedPitches.push_back(prevPitch);
             }
 
-            const int motifDelta = motifStepsSigned[static_cast<size_t>(step16)];
-            const int contourBias = static_cast<int>(std::llround((profile.melody.arch_contour - 0.5) * 4.0));
-            const int desiredPitch = std::clamp(prevPitch + motifDelta + contourBias, melLo, melHi);
+            // Position-aware 4-bar phrase arch target with mean reversion (zero linear drift)
+            const double archShape = std::sin(3.14159265358979323846 * phraseBarPos);
+            const double archShift = (profile.melody.arch_contour - 0.35) * 2.0 * archShape * static_cast<double>(halfSpan);
+            const int archTarget = std::clamp(static_cast<int>(std::llround(centerPitch + archShift)), melLo + 2, melHi - 2);
 
-            // Pick closest candidate pitch to desiredPitch, with slight random tie-break
+            const int motifDelta = motifStepsSigned[static_cast<size_t>(step16)];
+            const int desiredPitch = std::clamp(
+                static_cast<int>(std::llround(0.62 * static_cast<double>(prevPitch + motifDelta) + 0.38 * static_cast<double>(archTarget))),
+                melLo, melHi);
+
             int chosen = allowedPitches.front();
             int bestDist = 999;
             for (int p : allowedPitches) {
@@ -770,7 +840,10 @@ GeneratedPattern PatternGenerator::generatePattern(
             const double dur = std::clamp(gap * profile.melody.legato_ratio, 0.08, std::min(gap * 0.95, 2.0));
             const double onset = applySwingAndHumanize(rawBeat, step16);
 
-            const int baseVel = isStrongBeat ? 96 : 82;
+            const double introGain = (perform.section == SongSection::Intro)
+                                         ? (0.74 + 0.26 * (rawBeat / std::max(1.0, totalBeats)))
+                                         : 1.0;
+            const int baseVel = static_cast<int>(std::llround((isStrongBeat ? 96.0 : 82.0) * introGain));
             const int vel = std::clamp(static_cast<int>(std::llround(baseVel + rng.nextRange(-10.0, 10.0) * humanize)), 40, 125);
 
             NoteEvent ev;
@@ -798,6 +871,8 @@ GeneratedPattern PatternGenerator::generatePattern(
             return std::clamp(p, bassLo, bassHi);
         };
 
+        const double bassSustainFactor = std::clamp(0.45 + 0.50 * profile.rhythm.sustain_ratio, 0.35, 0.96);
+
         for (size_t s = 0; s < progression.size(); ++s) {
             const auto& slot = progression[s];
             const int rootPc = romanChordRootPitchClass(slot.chord, profile.harmony.tonic_pc);
@@ -810,6 +885,9 @@ GeneratedPattern PatternGenerator::generatePattern(
             std::vector<std::pair<double, int>> bassOnsets;
             for (int k = 0; k < nSteps; ++k) {
                 const double rawBeat = slot.start_beat + static_cast<double>(k) * stepBeats;
+                if (perform.section == SongSection::Outro && s + 1 == progression.size() && k > 0) {
+                    continue;
+                }
                 const double scaledBeat = rawBeat * scale;
                 const int step16 = static_cast<int>(std::llround(std::fmod(scaledBeat, beatsPerBar) / 0.25)) % 16;
                 const double gridP = profile.rhythm.bass_onset_grid[static_cast<size_t>(step16)];
@@ -831,17 +909,29 @@ GeneratedPattern PatternGenerator::generatePattern(
                 const int step16 = bassOnsets[idx].second;
                 const double nextBeat = (idx + 1 < bassOnsets.size()) ? bassOnsets[idx + 1].first : slotEnd;
                 const double gap = std::max(0.10, nextBeat - rawBeat);
-                const double dur = std::clamp(gap * 0.88, 0.08, gap * 0.96);
+                const double dur = std::clamp(gap * bassSustainFactor, 0.08, gap * 0.96);
 
                 int pitch = rootPitch;
                 if (idx > 0) {
-                    const double r = rng.nextDouble();
-                    if (r < 0.22) pitch = fifthPitch;
-                    else if (r < 0.34) pitch = octPitch;
+                    const bool isLastBeforeChange = (idx + 1 == bassOnsets.size()) && (s + 1 < progression.size());
+                    if (isLastBeforeChange && rng.nextDouble() < 0.45) {
+                        const int nextRootPc = romanChordRootPitchClass(progression[s + 1].chord, profile.harmony.tonic_pc);
+                        const int nextBassPc = normalizePitchClass(nextRootPc + progression[s + 1].chord.bass_degree_offset);
+                        const int nextRootPitch = placeInBassRegister(nextBassPc);
+                        const int approach = (rng.nextDouble() < 0.5) ? (nextRootPitch - 1) : (nextRootPitch + 2);
+                        pitch = std::clamp(approach, bassLo, bassHi);
+                    } else {
+                        const double r = rng.nextDouble();
+                        if (r < 0.22) pitch = fifthPitch;
+                        else if (r < 0.34) pitch = octPitch;
+                    }
                 }
 
                 const double onset = applySwingAndHumanize(rawBeat, step16);
-                const int vel = std::clamp(static_cast<int>(std::llround((idx == 0 ? 108.0 : 92.0) + rng.nextRange(-7.0, 7.0) * humanize)), 45, 127);
+                const double introGain = (perform.section == SongSection::Intro)
+                                             ? (0.78 + 0.22 * (rawBeat / std::max(1.0, totalBeats)))
+                                             : 1.0;
+                const int vel = std::clamp(static_cast<int>(std::llround(((idx == 0 ? 108.0 : 92.0) + rng.nextRange(-7.0, 7.0) * humanize) * introGain)), 45, 127);
 
                 NoteEvent ev;
                 ev.onset_beats = onset;

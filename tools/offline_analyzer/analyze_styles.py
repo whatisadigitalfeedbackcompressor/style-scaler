@@ -313,11 +313,15 @@ def match_chord_to_roman(
 
 
 def split_roles(pitched: Sequence[NoteEvent]) -> Tuple[List[NoteEvent], List[NoteEvent], List[NoteEvent]]:
-    chans = {e.channel for e in pitched if 1 <= e.channel <= 3}
+    ch1_count = sum(1 for e in pitched if e.channel == 1)
+    ch2_count = sum(1 for e in pitched if e.channel == 2)
+    ch3_count = sum(1 for e in pitched if e.channel == 3)
+    has_explicit_melody = ch2_count >= 4 and ch2_count >= 0.05 * (ch1_count + ch2_count)
+
     chords: List[NoteEvent] = []
     melody: List[NoteEvent] = []
     bass: List[NoteEvent] = []
-    if len(chans) >= 2:
+    if has_explicit_melody:
         for e in pitched:
             if e.channel == 2:
                 melody.append(e)
@@ -326,36 +330,63 @@ def split_roles(pitched: Sequence[NoteEvent]) -> Tuple[List[NoteEvent], List[Not
             else:
                 chords.append(e)
     else:
+        remaining: List[NoteEvent] = []
+        for e in pitched:
+            if e.channel == 3 or (32 <= e.program <= 39):
+                bass.append(e)
+            elif e.channel == 2:
+                melody.append(e)
+            else:
+                remaining.append(e)
+
         i = 0
-        n = len(pitched)
+        n = len(remaining)
         while i < n:
             j = i + 1
-            while j < n and (pitched[j].onset_beats - pitched[i].onset_beats) <= 0.15:
+            while j < n and (remaining[j].onset_beats - remaining[i].onset_beats) <= 0.15:
                 j += 1
-            cluster = sorted(pitched[i:j], key=lambda x: x.pitch)
+            cluster = sorted(remaining[i:j], key=lambda x: x.pitch)
             if len(cluster) >= 3:
                 start = 0
-                if cluster[0].pitch < 48 and (cluster[1].pitch - cluster[0].pitch) >= 5:
+                if ch3_count == 0 and cluster[0].pitch < 48 and (cluster[1].pitch - cluster[0].pitch) >= 5:
                     bass.append(cluster[0])
                     start = 1
                 chords.extend(cluster[start:])
-                if cluster[-1].pitch >= 68 and len(cluster) >= 4:
+                if cluster[-1].pitch >= 60 and ((cluster[-1].pitch - cluster[-2].pitch) >= 5 or cluster[-1].pitch >= 68):
                     melody.append(cluster[-1])
             elif len(cluster) == 2:
-                if cluster[0].pitch < 50:
+                if ch3_count == 0 and cluster[0].pitch < 50:
                     bass.append(cluster[0])
-                    (melody if cluster[1].pitch >= 64 else chords).append(cluster[1])
+                    (melody if cluster[1].pitch >= 60 else chords).append(cluster[1])
                 else:
-                    chords.extend(cluster)
+                    chords.append(cluster[0])
+                    if cluster[1].pitch >= 60:
+                        melody.append(cluster[1])
+                        if cluster[1].pitch - cluster[0].pitch <= 12:
+                            chords.append(cluster[1])
+                    else:
+                        chords.append(cluster[1])
             else:
                 e = cluster[0]
-                if e.pitch < 48 or (32 <= e.program <= 39):
+                if ch3_count == 0 and e.pitch < 48:
                     bass.append(e)
-                elif e.pitch >= 64 or e.duration_beats <= 1.0:
+                elif e.pitch >= 60 or e.duration_beats <= 1.25:
                     melody.append(e)
+                    if e.duration_beats >= 0.5 and e.pitch < 76:
+                        chords.append(e)
                 else:
                     chords.append(e)
             i = j
+
+    if len(melody) < 2 and len(pitched) >= 4:
+        bucket_top: Dict[int, NoteEvent] = {}
+        for e in pitched:
+            if e.channel == 3 or e.pitch < 52:
+                continue
+            b = int(np.floor(e.onset_beats * 2.0))
+            if b not in bucket_top or e.pitch > bucket_top[b].pitch:
+                bucket_top[b] = e
+        melody = [bucket_top[k] for k in sorted(bucket_top)]
 
     if not chords:
         chords = [e for e in pitched if e.pitch >= 45] or list(pitched)
@@ -605,11 +636,11 @@ def analyze_corpus(
     harmonic_pacing = float(np.clip(np.mean(pacing_vals) if pacing_vals else 1.0, 0.25, 4.0))
     sustain_ratio = float(np.clip(np.mean(sustain_vals) if sustain_vals else 0.85, 0.2, 1.15))
 
-    # Vocabulary & Markov matrix
+    # Vocabulary & Markov matrix (top-K=12 pruning + healthy Dirichlet smoothing)
     vocab_list = []
-    tot_vw = sum(vocab_weight.values()) or 1.0
-    tot_cw = sum(cadence_weight.values()) or 1.0
-    sorted_syms = sorted(vocab_weight.keys(), key=lambda s: vocab_weight[s], reverse=True)
+    sorted_syms = sorted(vocab_weight.keys(), key=lambda s: vocab_weight[s], reverse=True)[:12]
+    tot_vw = sum(vocab_weight[s] for s in sorted_syms) or 1.0
+    tot_cw = sum(cadence_weight[s] for s in sorted_syms) or 1.0
     for sym in sorted_syms:
         deg, acc, qual = vocab_meta[sym]
         vocab_list.append({
@@ -624,10 +655,12 @@ def analyze_corpus(
 
     transitions: Dict[str, Dict[str, float]] = {}
     for fsym in sorted_syms:
+        row_obs = sum(trans_counts[fsym][item["symbol"]] for item in vocab_list)
         row: Dict[str, float] = {}
         for item in vocab_list:
             tsym = item["symbol"]
-            c = 0.05 * item["weight"] + trans_counts[fsym][tsym]
+            raw_p = (trans_counts[fsym][tsym] / row_obs) if row_obs > 0 else item["weight"]
+            c = 0.42 * raw_p + 0.58 * item["weight"]
             if tsym == fsym and len(sorted_syms) > 1:
                 c *= 0.25
             row[tsym] = c
@@ -680,6 +713,70 @@ def analyze_corpus(
     chrom_total = sum(p[1] for p in chrom_pairs) or 1.0
     chromaticism = float(np.clip(sum(p[0] for p in chrom_pairs) / chrom_total, 0.0, 1.0))
 
+    base_harmony = {
+        "tonic_pc": int(primary_tonic),
+        "mode": primary_mode,
+        "vocabulary": vocab_list,
+        "transitions": transitions,
+        "chromaticism": round(chromaticism, 4),
+    }
+    base_rhythm = {
+        "subdivision": 16,
+        "chord_onset_grid": cg,
+        "melody_onset_grid": mg,
+        "bass_onset_grid": bg,
+        "syncopation": round(syncopation, 4),
+        "anticipation": round(anticipation, 4),
+        "swing": round(swing, 4),
+        "harmonic_pacing": round(harmonic_pacing, 4),
+        "sustain_ratio": round(sustain_ratio, 4),
+    }
+    base_voicing = {
+        "register_low": reg_low,
+        "register_high": reg_high,
+        "center_pitch": center_pitch,
+        "spread_semitones": round(spread_semitones, 3),
+        "min_notes": min_notes,
+        "max_notes": max_notes,
+        "extension_richness": round(ext_richness, 4),
+        "drop2_prob": round(drop2_prob, 4),
+        "inversion_prob": round(inv_prob, 4),
+        "voice_leading_tightness": round(vl_tight, 4),
+        "sub_bass_clearance_midi": int(clearance),
+        "bass_register_low": bass_low,
+        "bass_register_high": bass_high,
+    }
+    base_melody = {
+        "interval_histogram": [round(float(x), 6) for x in interval_hist],
+        "chord_tone_ratio": round(ct_ratio, 4),
+        "tension_tone_ratio": round(tt_ratio, 4),
+        "motif_density": round(motif_density, 4),
+        "motif_repetition": round(motif_rep, 4),
+        "arch_contour": round(arch_contour, 4),
+        "register_low": mel_low,
+        "register_high": mel_high,
+        "legato_ratio": round(legato_ratio, 4),
+    }
+
+    import copy
+    intro_r = copy.deepcopy(base_rhythm)
+    intro_r["harmonic_pacing"] = round(float(np.clip(harmonic_pacing * 0.55, 0.25, 4.0)), 4)
+    intro_r["sustain_ratio"] = round(float(np.clip(sustain_ratio * 1.15, 0.2, 1.5)), 4)
+    intro_r["syncopation"] = round(float(np.clip(syncopation * 0.65, 0.0, 1.0)), 4)
+    intro_r["bass_onset_grid"] = [round(v * (1.0 if idx % 8 == 0 else 0.35), 4) for idx, v in enumerate(bg)]
+    intro_r["melody_onset_grid"] = [round(v * 0.55, 4) for v in mg]
+    intro_v = copy.deepcopy(base_voicing)
+    intro_v["register_low"] = min(reg_high - 6, reg_low + 4)
+    intro_v["spread_semitones"] = round(float(np.clip(spread_semitones * 0.85, 5.0, 30.0)), 3)
+    intro_m = copy.deepcopy(base_melody)
+    intro_m["motif_density"] = round(float(np.clip(motif_density * 0.60, 0.1, 1.0)), 4)
+
+    outro_r = copy.deepcopy(base_rhythm)
+    outro_r["sustain_ratio"] = round(float(np.clip(sustain_ratio * 1.20, 0.2, 1.5)), 4)
+    outro_r["syncopation"] = round(float(np.clip(syncopation * 0.75, 0.0, 1.0)), 4)
+    outro_m = copy.deepcopy(base_melody)
+    outro_m["motif_density"] = round(float(np.clip(motif_density * 0.70, 0.1, 1.0)), 4)
+
     return {
         "schema_version": 1,
         "id": profile_id,
@@ -691,49 +788,30 @@ def analyze_corpus(
         "default_bpm": round(calc_default_bpm, 2),
         "time_signature": {"numerator": 4, "denominator": 4},
         "source": "offline_analyzer",
-        "harmony": {
-            "tonic_pc": int(primary_tonic),
-            "mode": primary_mode,
-            "vocabulary": vocab_list,
-            "transitions": transitions,
-            "chromaticism": round(chromaticism, 4),
-        },
-        "rhythm": {
-            "subdivision": 16,
-            "chord_onset_grid": cg,
-            "melody_onset_grid": mg,
-            "bass_onset_grid": bg,
-            "syncopation": round(syncopation, 4),
-            "anticipation": round(anticipation, 4),
-            "swing": round(swing, 4),
-            "harmonic_pacing": round(harmonic_pacing, 4),
-            "sustain_ratio": round(sustain_ratio, 4),
-        },
-        "voicing": {
-            "register_low": reg_low,
-            "register_high": reg_high,
-            "center_pitch": center_pitch,
-            "spread_semitones": round(spread_semitones, 3),
-            "min_notes": min_notes,
-            "max_notes": max_notes,
-            "extension_richness": round(ext_richness, 4),
-            "drop2_prob": round(drop2_prob, 4),
-            "inversion_prob": round(inv_prob, 4),
-            "voice_leading_tightness": round(vl_tight, 4),
-            "sub_bass_clearance_midi": int(clearance),
-            "bass_register_low": bass_low,
-            "bass_register_high": bass_high,
-        },
-        "melody": {
-            "interval_histogram": [round(float(x), 6) for x in interval_hist],
-            "chord_tone_ratio": round(ct_ratio, 4),
-            "tension_tone_ratio": round(tt_ratio, 4),
-            "motif_density": round(motif_density, 4),
-            "motif_repetition": round(motif_rep, 4),
-            "arch_contour": round(arch_contour, 4),
-            "register_low": mel_low,
-            "register_high": mel_high,
-            "legato_ratio": round(legato_ratio, 4),
+        "track_count": len(songs),
+        "harmony": base_harmony,
+        "rhythm": base_rhythm,
+        "voicing": base_voicing,
+        "melody": base_melody,
+        "sections": {
+            "intro": {
+                "harmony": copy.deepcopy(base_harmony),
+                "rhythm": intro_r,
+                "voicing": intro_v,
+                "melody": intro_m,
+            },
+            "chorus": {
+                "harmony": copy.deepcopy(base_harmony),
+                "rhythm": copy.deepcopy(base_rhythm),
+                "voicing": copy.deepcopy(base_voicing),
+                "melody": copy.deepcopy(base_melody),
+            },
+            "outro": {
+                "harmony": copy.deepcopy(base_harmony),
+                "rhythm": outro_r,
+                "voicing": copy.deepcopy(base_voicing),
+                "melody": outro_m,
+            },
         },
     }
 

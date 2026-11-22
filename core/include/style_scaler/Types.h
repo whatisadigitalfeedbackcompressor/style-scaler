@@ -70,6 +70,23 @@ inline std::string_view tempoScaleName(TempoScale scale) noexcept {
 
 std::optional<TempoScale> parseTempoScale(std::string_view text);
 
+enum class SongSection {
+    Intro = 0,
+    Chorus = 1,
+    Outro = 2
+};
+
+inline std::string_view songSectionName(SongSection s) noexcept {
+    switch (s) {
+        case SongSection::Intro:  return "intro";
+        case SongSection::Chorus: return "chorus";
+        case SongSection::Outro:  return "outro";
+    }
+    return "chorus";
+}
+
+std::optional<SongSection> parseSongSection(std::string_view text);
+
 struct RomanChord {
     int degree = 1;               // 1..7 relative to tonic major reference
     int accidental = 0;           // -1 = b, 0 = natural, +1 = #

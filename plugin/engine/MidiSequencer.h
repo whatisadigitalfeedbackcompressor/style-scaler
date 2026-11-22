@@ -95,6 +95,8 @@ private:
     std::array<std::array<double, 128>, 3> seq_note_rem_beats_{};
     // Active audition notes
     std::array<std::array<bool, 128>, 3> aud_note_active_{};
+    // Active MIDI-bound pad chord voicings (MIDI notes 36..51 -> pad 0..15)
+    std::array<PadChordVoicing, 16> bound_pad_active_{};
 
     std::atomic<bool> internal_playing_{false};
     std::atomic<bool> daw_sync_{true};

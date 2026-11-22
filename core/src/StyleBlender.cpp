@@ -199,7 +199,20 @@ StyleProfile StyleBlender::blend(const StyleProfile& slotA,
     out.time_sig_num = slotA.time_sig_num;
     out.time_sig_den = slotA.time_sig_den;
 
-    out.harmony = blendHarmony(slotA.harmony, slotB.harmony, wH);
+    if (params.section == SongSection::Chorus) {
+        out.harmony = blendHarmony(slotA.harmony, slotB.harmony, wH);
+        out.rhythm = blendRhythm(slotA.rhythm, slotB.rhythm, wR);
+        out.voicing = blendVoicing(slotA.voicing, slotB.voicing, wV);
+        out.melody = blendMelody(slotA.melody, slotB.melody, wM);
+    } else {
+        const SectionDNA secA = resolveSectionDNA(slotA, params.section);
+        const SectionDNA secB = resolveSectionDNA(slotB, params.section);
+        out.harmony = blendHarmony(secA.harmony, secB.harmony, wH);
+        out.rhythm = blendRhythm(secA.rhythm, secB.rhythm, wR);
+        out.voicing = blendVoicing(secA.voicing, secB.voicing, wV);
+        out.melody = blendMelody(secA.melody, secB.melody, wM);
+    }
+
     if (params.key_override_pc.has_value()) {
         out.harmony.tonic_pc = normalizePitchClass(*params.key_override_pc);
     }
@@ -207,9 +220,23 @@ StyleProfile StyleBlender::blend(const StyleProfile& slotA,
         out.harmony.mode = *params.mode_override;
     }
 
-    out.rhythm = blendRhythm(slotA.rhythm, slotB.rhythm, wR);
-    out.voicing = blendVoicing(slotA.voicing, slotB.voicing, wV);
-    out.melody = blendMelody(slotA.melody, slotB.melody, wM);
+    for (SongSection secEnum : {SongSection::Intro, SongSection::Chorus, SongSection::Outro}) {
+        const SectionDNA sA = resolveSectionDNA(slotA, secEnum);
+        const SectionDNA sB = resolveSectionDNA(slotB, secEnum);
+        SectionDNA blendedSec;
+        blendedSec.harmony = blendHarmony(sA.harmony, sB.harmony, wH);
+        if (params.key_override_pc.has_value()) {
+            blendedSec.harmony.tonic_pc = normalizePitchClass(*params.key_override_pc);
+        }
+        if (params.mode_override.has_value()) {
+            blendedSec.harmony.mode = *params.mode_override;
+        }
+        blendedSec.rhythm = blendRhythm(sA.rhythm, sB.rhythm, wR);
+        blendedSec.voicing = blendVoicing(sA.voicing, sB.voicing, wV);
+        blendedSec.melody = blendMelody(sA.melody, sB.melody, wM);
+        blendedSec.populated = true;
+        out.sections[std::string(songSectionName(secEnum))] = std::move(blendedSec);
+    }
 
     if ((wH > 0.0 && wH < 1.0) || (wM > 0.0 && wM < 1.0)) {
         normalizeProfileDistributions(out);

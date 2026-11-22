@@ -121,6 +121,11 @@ if(STYLE_SCALER_BUILD_PLUGIN AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/plugin/Plug
         FetchContent_MakeAvailable(JUCE)
     endif()
 
+    if(TARGET juce::juce_audio_formats)
+        target_compile_definitions(juce_audio_formats INTERFACE JUCE_USE_MP3AUDIOFORMAT=1)
+    endif()
+    add_compile_definitions(JUCE_USE_MP3AUDIOFORMAT=1)
+
     set(STYLE_SCALER_HAS_MUSCRIPTOR 0)
     if(STYLE_SCALER_ENABLE_MUSCRIPTOR)
         if(DEFINED BUILD_TESTING)
@@ -135,6 +140,9 @@ if(STYLE_SCALER_BUILD_PLUGIN AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/plugin/Plug
         set(MUSCRIPTOR_BUILD_TESTS OFF CACHE BOOL "" FORCE)
         set(MUSCRIPTOR_BUILD_BENCH OFF CACHE BOOL "" FORCE)
         set(MUSCRIPTOR_VULKAN OFF CACHE BOOL "" FORCE)
+        if(MSVC AND NOT MUSCRIPTOR_CPU_VARIANTS)
+            set(MUSCRIPTOR_NATIVE ON CACHE BOOL "" FORCE)
+        endif()
 
         FetchContent_Declare(
             muscriptor_cpp
@@ -202,6 +210,7 @@ if(STYLE_SCALER_BUILD_PLUGIN AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/plugin/Plug
     target_compile_definitions(StyleScaler PUBLIC
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
+        JUCE_USE_MP3AUDIOFORMAT=1
         JUCE_VST3_CAN_REPLACE_VST2=0
         STYLE_SCALER_HAS_MUSCRIPTOR=${STYLE_SCALER_HAS_MUSCRIPTOR}
     )
@@ -238,6 +247,7 @@ if(STYLE_SCALER_BUILD_PLUGIN AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/plugin/Plug
         target_compile_definitions(style_deconstruct PRIVATE
             JUCE_WEB_BROWSER=0
             JUCE_USE_CURL=0
+            JUCE_USE_MP3AUDIOFORMAT=1
             STYLE_SCALER_HAS_MUSCRIPTOR=${STYLE_SCALER_HAS_MUSCRIPTOR}
         )
         if(MSVC)
@@ -270,6 +280,7 @@ if(STYLE_SCALER_BUILD_PLUGIN AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/plugin/Plug
         target_compile_definitions(style_plugin_tests PRIVATE
             JUCE_WEB_BROWSER=0
             JUCE_USE_CURL=0
+            JUCE_USE_MP3AUDIOFORMAT=1
             JUCE_VST3_CAN_REPLACE_VST2=0
             STYLE_SCALER_HAS_MUSCRIPTOR=${STYLE_SCALER_HAS_MUSCRIPTOR}
             STYLE_SCALER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"

@@ -38,6 +38,14 @@ std::optional<TempoScale> parseTempoScale(std::string_view text) {
     return std::nullopt;
 }
 
+std::optional<SongSection> parseSongSection(std::string_view text) {
+    const auto t = toLowerCopy(trimCopy(text));
+    if (t == "intro" || t == "0") return SongSection::Intro;
+    if (t == "chorus" || t == "drop" || t == "main" || t == "1") return SongSection::Chorus;
+    if (t == "outro" || t == "ending" || t == "2") return SongSection::Outro;
+    return std::nullopt;
+}
+
 std::array<int, 7> scaleIntervals(Mode mode) noexcept {
     switch (mode) {
         case Mode::Minor:         return {0, 2, 3, 5, 7, 8, 10};

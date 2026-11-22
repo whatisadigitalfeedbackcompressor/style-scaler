@@ -89,6 +89,16 @@ struct MelodyAxis {
     bool operator==(const MelodyAxis&) const = default;
 };
 
+struct SectionDNA {
+    HarmonyAxis harmony;
+    RhythmAxis rhythm;
+    VoicingAxis voicing;
+    MelodyAxis melody;
+    bool populated = false;
+
+    bool operator==(const SectionDNA&) const = default;
+};
+
 struct StyleProfile {
     static constexpr int kCurrentSchemaVersion = 1;
 
@@ -105,6 +115,9 @@ struct StyleProfile {
     int time_sig_den = 4;
     std::string source = "preset";
 
+    int track_count = 1;
+    std::vector<std::string> processed_tracks;
+
     // Optional song/preset metadata (schema_version remains 1)
     std::vector<std::string> tags;
     std::string genre_source;
@@ -115,6 +128,8 @@ struct StyleProfile {
     RhythmAxis rhythm;
     VoicingAxis voicing;
     MelodyAxis melody;
+
+    std::map<std::string, SectionDNA> sections;
 
     bool operator==(const StyleProfile&) const = default;
 };
@@ -130,6 +145,9 @@ ValidationResult validate(const StyleProfile& profile);
 
 // Normalizes transition rows, vocabulary weights, and melody interval histogram in place.
 void normalizeProfileDistributions(StyleProfile& profile);
+
+SectionDNA deriveSectionDNA(const StyleProfile& profile, SongSection section);
+SectionDNA resolveSectionDNA(const StyleProfile& profile, SongSection section);
 
 nlohmann::json toJson(const StyleProfile& profile);
 std::expected<StyleProfile, std::string> fromJson(const nlohmann::json& j);

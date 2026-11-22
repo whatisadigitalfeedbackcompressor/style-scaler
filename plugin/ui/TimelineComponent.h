@@ -60,12 +60,16 @@ private:
     };
 
     void setBarChoiceIndex(int choiceIndex);
+    void setSectionChoiceIndex(int choiceIndex);
 
     StyleScalerAudioProcessor& processor_;
     int selected_slot_index_ = 0;
 
     juce::Label header_lbl_;
     juce::Label playhead_lbl_;
+    juce::TextButton sec_intro_btn_{"Intro"};
+    juce::TextButton sec_chorus_btn_{"Chorus"};
+    juce::TextButton sec_outro_btn_{"Outro"};
     juce::TextButton bars4_btn_{"4 Bars"};
     juce::TextButton bars8_btn_{"8 Bars"};
     juce::TextButton bars16_btn_{"16 Bars"};

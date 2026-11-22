@@ -40,6 +40,7 @@ inline constexpr const char* enableBass = "enable_bass";
 inline constexpr const char* keyRoot = "key_root";
 inline constexpr const char* keyMode = "key_mode";
 inline constexpr const char* progressionBars = "progression_bars";
+inline constexpr const char* songSection = "song_section";
 } // namespace ParamIDs
 
 class StyleScalerAudioProcessor : public juce::AudioProcessor,
@@ -89,6 +90,7 @@ public:
         uint64_t seed = 42;
         int num_bars = 8;
         TempoScale tempo_scale = TempoScale::Normal;
+        SongSection song_section = SongSection::Chorus;
     };
 
     EngineSnapshot getSnapshot() const;

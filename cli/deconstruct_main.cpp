@@ -11,7 +11,9 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
+#include <csignal>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
@@ -28,6 +30,12 @@ namespace fs = std::filesystem;
 using namespace style_scaler;
 
 namespace {
+
+std::atomic<bool> g_stopRequested{false};
+
+void handleSigInt(int) {
+    g_stopRequested.store(true, std::memory_order_release);
+}
 
 enum class BatchMode {
     Corpus,
@@ -61,7 +69,11 @@ void printUsage() {
         "  --scale-mode <name>     Override mode (minor, dorian, phrygian, ...)\n"
         "  --clearance <midi>      Override sub_bass_clearance_midi (36..60)\n"
         "  --save-midi-dir <dir>   Also export transcribed .mid files into <dir>\n"
-        "  --catalog <file.json>   Generate/update SHA-256 preset catalog.json from output dir\n";
+        "  --catalog <file.json>   Generate/update SHA-256 preset catalog.json from output dir\n"
+        "  --merge-existing        Merge into existing genre JSONs incrementally (default in auto-genre/per-folder)\n"
+        "  --no-merge              Overwrite existing genre JSONs instead of merging\n"
+        "  --cache-dir <dir>       Per-song transcription checkpoint directory [.deconstruct_cache]\n"
+        "  --no-cache              Disable per-song transcription checkpoint cache\n";
 }
 
 bool isSupportedMediaFile(const fs::path& p) {
@@ -117,6 +129,130 @@ std::string currentIsoUtc() {
     std::ostringstream oss;
     oss << std::put_time(&tmUtc, "%Y-%m-%dT%H:%M:%SZ");
     return oss.str();
+}
+
+std::string formatMmSs(double totalSeconds) {
+    const int secs = std::max(0, static_cast<int>(std::llround(totalSeconds)));
+    const int mins = secs / 60;
+    const int rem = secs % 60;
+    std::ostringstream oss;
+    oss << std::setw(2) << std::setfill('0') << mins << ":"
+        << std::setw(2) << std::setfill('0') << rem;
+    return oss.str();
+}
+
+std::string computeFileFingerprint(const fs::path& p, double maxSeconds, bool forceSpectral) {
+    std::error_code ec;
+    const auto fsize = fs::file_size(p, ec);
+    const auto ftime = fs::last_write_time(p, ec).time_since_epoch().count();
+    std::ostringstream keySeed;
+    keySeed << p.filename().string() << "|" << fsize << "|" << ftime
+            << "|ms=" << static_cast<int>(std::llround(maxSeconds * 10.0))
+            << "|sp=" << (forceSpectral ? 1 : 0);
+    if (!ec && fsize > 0 && fsize <= 64ULL * 1024ULL * 1024ULL) {
+        const juce::String fileSha = juce::SHA256(juce::File(p.string())).toHexString().toLowerCase();
+        keySeed << "|sha=" << fileSha.toStdString();
+    }
+    const std::string seedStr = keySeed.str();
+    return juce::SHA256(seedStr.data(), seedStr.size()).toHexString().toLowerCase().toStdString();
+}
+
+bool loadCachedSong(const fs::path& cacheFile, TranscriptionService::DeconstructedSong& out) {
+    if (!fs::exists(cacheFile)) return false;
+    try {
+        std::ifstream ifs(cacheFile, std::ios::binary);
+        if (!ifs) return false;
+        nlohmann::json j = nlohmann::json::parse(ifs);
+        if (!j.is_object() || !j.contains("notes") || !j["notes"].is_array()) return false;
+
+        out = TranscriptionService::DeconstructedSong{};
+        out.backend_name = j.value("backend_name", "MuScriptor (Cached)");
+        out.song_input.bpm = j.value("bpm", 120.0);
+        out.song_input.time_sig_num = j.value("time_sig_num", 4);
+        out.song_input.time_sig_den = j.value("time_sig_den", 4);
+
+        if (j.contains("metadata") && j["metadata"].is_object()) {
+            const auto& m = j["metadata"];
+            out.metadata.title = m.value("title", "");
+            out.metadata.artist = m.value("artist", "");
+            out.metadata.album = m.value("album", "");
+            out.metadata.raw_genre = m.value("raw_genre", "");
+            out.metadata.canonical_genre = m.value("canonical_genre", "");
+            out.metadata.genre_source = m.value("genre_source", "");
+            out.metadata.bpm = m.value("bpm", 0.0);
+            if (m.contains("tags") && m["tags"].is_array()) {
+                for (const auto& t : m["tags"]) {
+                    if (t.is_string()) out.metadata.tags.push_back(t.get<std::string>());
+                }
+            }
+        }
+
+        for (const auto& item : j["notes"]) {
+            NoteEvent ev;
+            ev.onset_beats = item.value("o", 0.0);
+            ev.duration_beats = item.value("d", 0.25);
+            ev.pitch = item.value("p", 60);
+            ev.velocity = item.value("v", 96);
+            ev.channel = item.value("c", 1);
+            ev.is_drum = item.value("dr", false);
+            ev.program = item.value("pr", 0);
+            out.song_input.notes.push_back(ev);
+        }
+        out.success = !out.song_input.notes.empty();
+        return out.success;
+    } catch (...) {
+        return false;
+    }
+}
+
+void saveCachedSong(const fs::path& cacheFile,
+                    const std::string& fingerprint,
+                    const TranscriptionService::DeconstructedSong& ds) {
+    if (!ds.success || ds.song_input.notes.empty()) return;
+    try {
+        std::error_code ec;
+        if (cacheFile.has_parent_path()) fs::create_directories(cacheFile.parent_path(), ec);
+        nlohmann::json notesArr = nlohmann::json::array();
+        for (const auto& ev : ds.song_input.notes) {
+            notesArr.push_back({
+                {"o", ev.onset_beats},
+                {"d", ev.duration_beats},
+                {"p", ev.pitch},
+                {"v", ev.velocity},
+                {"c", ev.channel},
+                {"dr", ev.is_drum},
+                {"pr", ev.program}
+            });
+        }
+        nlohmann::json j = {
+            {"fingerprint", fingerprint},
+            {"backend_name", ds.backend_name},
+            {"bpm", ds.song_input.bpm},
+            {"time_sig_num", ds.song_input.time_sig_num},
+            {"time_sig_den", ds.song_input.time_sig_den},
+            {"metadata", {
+                {"title", ds.metadata.title},
+                {"artist", ds.metadata.artist},
+                {"album", ds.metadata.album},
+                {"raw_genre", ds.metadata.raw_genre},
+                {"canonical_genre", ds.metadata.canonical_genre},
+                {"genre_source", ds.metadata.genre_source},
+                {"bpm", ds.metadata.bpm},
+                {"tags", ds.metadata.tags}
+            }},
+            {"notes", std::move(notesArr)}
+        };
+        std::ofstream ofs(cacheFile, std::ios::binary);
+        if (ofs) ofs << j.dump() << '\n';
+    } catch (...) {}
+}
+
+bool profileContainsTrack(const fs::path& jsonPath, const std::string& fingerprint) {
+    if (!fs::exists(jsonPath)) return false;
+    auto prof = loadFromFile(jsonPath);
+    if (!prof) return false;
+    return std::find(prof->processed_tracks.begin(), prof->processed_tracks.end(), fingerprint) !=
+           prof->processed_tracks.end();
 }
 
 bool writeCatalogFromDir(const fs::path& stylesDir, const fs::path& catalogPath) {
@@ -191,10 +327,47 @@ bool writeCatalogFromDir(const fs::path& stylesDir, const fs::path& catalogPath)
     return static_cast<bool>(ofs);
 }
 
+void renderProgressLine(size_t idx,
+                        size_t total,
+                        const std::string& filename,
+                        float trackProg,
+                        const std::string& stage,
+                        double elapsedSec) {
+    const float clampedTrack = std::clamp(trackProg, 0.0f, 1.0f);
+    const double totalFrac = std::clamp((static_cast<double>(idx) + clampedTrack) / static_cast<double>(std::max<size_t>(1, total)), 0.0, 1.0);
+    const int totalPct = static_cast<int>(std::llround(totalFrac * 100.0));
+    const int trackPct = static_cast<int>(std::llround(clampedTrack * 100.0));
+    const double etaSec = (totalFrac > 0.01) ? (elapsedSec * (1.0 - totalFrac) / totalFrac) : 0.0;
+
+    constexpr int kBarW = 20;
+    const int filled = std::clamp(static_cast<int>(std::llround(clampedTrack * kBarW)), 0, kBarW);
+    std::string bar(static_cast<size_t>(filled), '#');
+    bar.append(static_cast<size_t>(kBarW - filled), '-');
+
+    std::string shortName = filename;
+    if (shortName.size() > 24) shortName = shortName.substr(0, 21) + "...";
+    std::string shortStage = stage;
+    if (shortStage.size() > 28) shortStage = shortStage.substr(0, 25) + "...";
+
+    std::ostringstream oss;
+    oss << "[" << (idx + 1) << "/" << total << " | Total " << std::setw(3) << totalPct << "%] "
+        << shortName << " [" << bar << "] " << std::setw(3) << trackPct << "% | "
+        << shortStage << " | Elapsed " << formatMmSs(elapsedSec)
+        << " | ETA " << (totalFrac > 0.01 ? formatMmSs(etaSec) : "--:--");
+    std::string line = oss.str();
+    if (line.size() < 118) line.append(118 - line.size(), ' ');
+    std::cout << "\r" << line << std::flush;
+}
+
+void clearProgressLine() {
+    std::cout << "\r" << std::string(120, ' ') << "\r" << std::flush;
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
     juce::ScopedJuceInitialiser_GUI juceInit;
+    std::signal(SIGINT, handleSigInt);
 
     if (argc <= 1) {
         printUsage();
@@ -208,6 +381,9 @@ int main(int argc, char* argv[]) {
     std::optional<fs::path> catalogPath;
     std::optional<fs::path> saveMidiDir;
     std::optional<fs::path> modelPath;
+    fs::path cacheDir = ".deconstruct_cache";
+    bool useCache = true;
+    std::optional<bool> mergeExistingOpt;
 
     std::string idArg;
     std::string nameArg;
@@ -291,6 +467,14 @@ int main(int argc, char* argv[]) {
             saveMidiDir = needVal("--save-midi-dir");
         } else if (flag == "--catalog") {
             catalogPath = needVal("--catalog");
+        } else if (flag == "--merge-existing") {
+            mergeExistingOpt = true;
+        } else if (flag == "--no-merge") {
+            mergeExistingOpt = false;
+        } else if (flag == "--cache-dir") {
+            cacheDir = needVal("--cache-dir");
+        } else if (flag == "--no-cache") {
+            useCache = false;
         } else {
             std::cerr << "Unknown option: " << flag << "\n";
             return 2;
@@ -323,7 +507,7 @@ int main(int argc, char* argv[]) {
                 } else if (s == ModelManager::DownloadState::Verifying) {
                     std::cout << "  Verifying SHA-256...\n" << std::flush;
                 }
-                return true;
+                return !g_stopRequested.load(std::memory_order_acquire);
             },
             dlErr);
         if (!ok) {
@@ -334,8 +518,8 @@ int main(int argc, char* argv[]) {
     }
 
     const BatchMode mode = explicitMode.value_or(outDir.has_value() ? BatchMode::PerFolder : BatchMode::Corpus);
+    const bool mergeExisting = mergeExistingOpt.value_or(mode == BatchMode::AutoGenre || mode == BatchMode::PerFolder);
 
-    // Group input files according to BatchMode
     struct JobGroup {
         std::string id;
         std::string name;
@@ -357,51 +541,61 @@ int main(int argc, char* argv[]) {
         return found;
     };
 
-    auto finalizeAndWriteProfile = [&](const fs::path& destJson,
-                                       const std::vector<SongInput>& songs,
-                                       AnalysisOptions aopts,
-                                       int& okCount) {
-        StyleProfile prof = MidiStyleAnalyzer::analyzeCorpus(songs, aopts);
-        if (prof.genre.empty() || prof.genre == "Analyzed" || prof.genre == "Deconstructed" ||
-            prof.genre == "Deconstructed Song") {
-            prof.genre = AudioMetadataReader::inferGenreFromProfileHeuristic(prof);
-            if (prof.genre_source.empty() || prof.genre_source == "none") {
-                prof.genre_source = "heuristic";
+    auto finalizeSingleSongProfile = [&](const fs::path& destJson,
+                                         const SongInput& song,
+                                         const std::string& fingerprint,
+                                         AnalysisOptions aopts,
+                                         bool allowMerge) {
+        StyleProfile incoming = MidiStyleAnalyzer::analyze(song.notes, song.bpm, aopts);
+        incoming.track_count = 1;
+        if (!fingerprint.empty()) incoming.processed_tracks.push_back(fingerprint);
+
+        if (incoming.genre.empty() || incoming.genre == "Analyzed" || incoming.genre == "Deconstructed" ||
+            incoming.genre == "Deconstructed Song") {
+            incoming.genre = AudioMetadataReader::inferGenreFromProfileHeuristic(incoming);
+            if (incoming.genre_source.empty() || incoming.genre_source == "none") {
+                incoming.genre_source = "heuristic";
             }
-            std::string low = prof.genre;
+            std::string low = incoming.genre;
             std::transform(low.begin(), low.end(), low.begin(),
                            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-            if (std::find(prof.tags.begin(), prof.tags.end(), low) == prof.tags.end()) {
-                prof.tags.push_back(low);
-            }
-        }
-        if (!descArg.empty()) {
-            prof.description = descArg;
-        } else {
-            prof.description = "Offline deconstructed " + prof.genre + " from " +
-                               std::to_string(songs.size()) + " track(s) via " + aopts.source;
-            if (!prof.genre_source.empty()) {
-                prof.description += " [genre: " + prof.genre_source + "]";
+            if (std::find(incoming.tags.begin(), incoming.tags.end(), low) == incoming.tags.end()) {
+                incoming.tags.push_back(low);
             }
         }
         if (clearanceOverride.has_value()) {
-            prof.voicing.sub_bass_clearance_midi = std::clamp(
-                *clearanceOverride, 36, std::min(60, prof.voicing.register_high - 6));
-            prof.voicing.register_low = std::max(prof.voicing.register_low, prof.voicing.sub_bass_clearance_midi);
+            incoming.voicing.sub_bass_clearance_midi = std::clamp(
+                *clearanceOverride, 36, std::min(60, incoming.voicing.register_high - 6));
+            incoming.voicing.register_low = std::max(incoming.voicing.register_low, incoming.voicing.sub_bass_clearance_midi);
         }
-        normalizeProfileDistributions(prof);
 
-        if (auto saveRes = saveToFile(prof, destJson); !saveRes) {
+        StyleProfile finalProf = incoming;
+        if (allowMerge && fs::exists(destJson)) {
+            if (auto ex = loadFromFile(destJson)) {
+                if (!fingerprint.empty() &&
+                    std::find(ex->processed_tracks.begin(), ex->processed_tracks.end(), fingerprint) !=
+                        ex->processed_tracks.end()) {
+                    return true;
+                }
+                finalProf = MidiStyleAnalyzer::mergeProfiles(*ex, incoming);
+            }
+        }
+
+        if (!descArg.empty()) {
+            finalProf.description = descArg;
+        } else {
+            finalProf.description = "Offline deconstructed " + finalProf.genre + " from " +
+                                    std::to_string(std::max(1, finalProf.track_count)) + " track(s) via " + aopts.source;
+            if (!finalProf.genre_source.empty()) {
+                finalProf.description += " [genre: " + finalProf.genre_source + "]";
+            }
+        }
+        normalizeProfileDistributions(finalProf);
+
+        if (auto saveRes = saveToFile(finalProf, destJson); !saveRes) {
             std::cerr << "  Error writing " << destJson.string() << ": " << saveRes.error() << "\n";
             return false;
         }
-
-        std::cout << "  Wrote " << destJson.string()
-                  << " | Genre=" << prof.genre << " (" << (prof.genre_source.empty() ? "manual" : prof.genre_source) << ")"
-                  << " | Key=" << pitchClassName(prof.harmony.tonic_pc) << " " << modeName(prof.harmony.mode)
-                  << " | Vocab=" << prof.harmony.vocabulary.size()
-                  << " | Floor=" << prof.voicing.sub_bass_clearance_midi << "\n";
-        ++okCount;
         return true;
     };
 
@@ -412,7 +606,54 @@ int main(int argc, char* argv[]) {
     dopts.bpm_hint = bpmHint;
     dopts.force_spectral = forceSpectral;
 
+    auto processOneTrack = [&](size_t idx,
+                               size_t total,
+                               const fs::path& f,
+                               const std::chrono::steady_clock::time_point& batchStart,
+                               const std::string& fingerprint,
+                               bool& outFromCache,
+                               double& outTrackSec) -> TranscriptionService::DeconstructedSong {
+        outFromCache = false;
+        const auto t0 = std::chrono::steady_clock::now();
+        TranscriptionService::DeconstructedSong ds;
+
+        const fs::path cacheFile = cacheDir / (fingerprint + ".json");
+        if (useCache && loadCachedSong(cacheFile, ds)) {
+            outFromCache = true;
+            outTrackSec = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+            return ds;
+        }
+
+        int lastPct = -2;
+        auto lastPrint = std::chrono::steady_clock::now() - std::chrono::milliseconds(200);
+        ds = txService.deconstructFileBlocking(
+            juce::File(f.string()), dopts,
+            [&](float trackProg, std::string stage) -> bool {
+                if (g_stopRequested.load(std::memory_order_acquire)) {
+                    txService.cancel();
+                    return false;
+                }
+                const int pct = static_cast<int>(std::llround(trackProg * 100.0f));
+                const auto now = std::chrono::steady_clock::now();
+                const auto dtMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastPrint).count();
+                if (std::abs(pct - lastPct) >= 1 || dtMs >= 65) {
+                    lastPct = pct;
+                    lastPrint = now;
+                    const double elapsed = std::chrono::duration<double>(now - batchStart).count();
+                    renderProgressLine(idx, total, f.filename().string(), trackProg, stage, elapsed);
+                }
+                return true;
+            });
+
+        outTrackSec = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        if (ds.success && useCache) {
+            saveCachedSong(cacheFile, fingerprint, ds);
+        }
+        return ds;
+    };
+
     int succeeded = 0;
+    int completedTracks = 0;
 
     if (mode == BatchMode::AutoGenre) {
         const fs::path destRoot = outDir.value_or(fs::path("presets/styles"));
@@ -430,22 +671,46 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        struct GenrePool {
-            std::string genre_name;
-            std::vector<SongInput> songs;
-            std::vector<std::string> tags;
-            std::map<std::string, int> source_counts;
-            std::map<std::string, int> artist_counts;
-            std::string last_backend;
-        };
-        std::map<std::string, GenrePool> pools;
+        std::map<std::string, bool> initializedInRun;
+        const auto batchStart = std::chrono::steady_clock::now();
+        std::cout << "=== Auto-Genre Deconstruction (" << allFiles.size() << " track(s), merge="
+                  << (mergeExisting ? "ON" : "OFF") << ") ===\n";
 
-        std::cout << "=== Auto-Genre Deconstruction (" << allFiles.size() << " track(s)) ===\n";
-        for (const auto& f : allFiles) {
-            std::cout << "  -> " << f.filename().string() << " ... " << std::flush;
-            const auto ds = txService.deconstructFileBlocking(juce::File(f.string()), dopts);
+        for (size_t idx = 0; idx < allFiles.size(); ++idx) {
+            if (g_stopRequested.load(std::memory_order_acquire)) break;
+            const auto& f = allFiles[idx];
+            const std::string fp = computeFileFingerprint(f, maxSeconds, forceSpectral);
+
+            // Fast deduplication check across existing target JSONs in destRoot when merging
+            if (mergeExisting && fs::exists(destRoot)) {
+                bool alreadyPresent = false;
+                for (const auto& e : fs::directory_iterator(destRoot)) {
+                    if (e.is_regular_file() && e.path().extension() == ".json" &&
+                        e.path().filename() != "catalog.json" &&
+                        profileContainsTrack(e.path(), fp)) {
+                        alreadyPresent = true;
+                        break;
+                    }
+                }
+                if (alreadyPresent) {
+                    std::cout << "  ✓ [" << (idx + 1) << "/" << allFiles.size() << "] "
+                              << f.filename().string() << " | [SKIP - already in profile]\n";
+                    ++completedTracks;
+                    continue;
+                }
+            }
+
+            bool fromCache = false;
+            double trackSec = 0.0;
+            const auto ds = processOneTrack(idx, allFiles.size(), f, batchStart, fp, fromCache, trackSec);
+            clearProgressLine();
+
+            if (g_stopRequested.load(std::memory_order_acquire) && !ds.success) {
+                break;
+            }
             if (!ds.success) {
-                std::cout << "SKIPPED (" << ds.error << ")\n";
+                std::cout << "  - [" << (idx + 1) << "/" << allFiles.size() << "] "
+                          << f.filename().string() << " | SKIPPED (" << ds.error << ")\n";
                 continue;
             }
 
@@ -462,71 +727,72 @@ int main(int argc, char* argv[]) {
                 detectedGenre = AudioMetadataReader::canonicalizeGenre(genreArg);
                 detectedSource = "cli_fallback";
             }
+            AnalysisOptions tmpOpts;
+            tmpOpts.bpm_hint = ds.song_input.bpm;
+            tmpOpts.key_override_pc = keyOverride;
+            tmpOpts.mode_override = modeOverride;
+            const auto singleProf = MidiStyleAnalyzer::analyze(ds.song_input.notes, ds.song_input.bpm, tmpOpts);
             if (detectedGenre.empty()) {
-                AnalysisOptions tmpOpts;
-                const auto singleProf = MidiStyleAnalyzer::analyze(ds.song_input.notes, ds.song_input.bpm, tmpOpts);
                 detectedGenre = AudioMetadataReader::inferGenreFromProfileHeuristic(singleProf);
                 detectedSource = "heuristic";
             }
 
             const std::string slug = AudioMetadataReader::sanitizeGenreSlug(detectedGenre);
-            auto& pool = pools[slug];
-            if (pool.genre_name.empty()) pool.genre_name = detectedGenre;
-            pool.songs.push_back(ds.song_input);
-            pool.source_counts[detectedSource] += 1;
-            if (!ds.metadata.artist.empty()) pool.artist_counts[ds.metadata.artist] += 1;
-            pool.last_backend = ds.backend_name;
+            const fs::path destJson = destRoot / (slug + ".json");
 
-            for (const auto& t : ds.metadata.tags) {
-                if (std::find(pool.tags.begin(), pool.tags.end(), t) == pool.tags.end()) {
-                    pool.tags.push_back(t);
-                }
-            }
-            std::string canonLow = detectedGenre;
-            std::transform(canonLow.begin(), canonLow.end(), canonLow.begin(),
-                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-            if (std::find(pool.tags.begin(), pool.tags.end(), canonLow) == pool.tags.end()) {
-                pool.tags.push_back(canonLow);
-            }
-
-            std::cout << ds.backend_name << " (" << ds.song_input.notes.size()
-                      << " notes @ " << std::fixed << std::setprecision(1) << ds.song_input.bpm
-                      << " BPM) -> [" << detectedGenre << " via " << detectedSource << "]\n";
-        }
-
-        for (const auto& [slug, pool] : pools) {
-            if (pool.songs.empty()) continue;
             AnalysisOptions aopts;
             aopts.id = slug;
-            aopts.name = pool.genre_name;
-            aopts.genre = pool.genre_name;
-            aopts.source = pool.last_backend.empty() ? "offline_deconstruct" : ("offline_" + pool.last_backend);
-            aopts.tags = pool.tags;
+            aopts.name = detectedGenre;
+            aopts.genre = detectedGenre;
+            aopts.source = ds.backend_name.empty() ? "offline_deconstruct" : ("offline_" + ds.backend_name);
+            aopts.tags = ds.metadata.tags;
+            aopts.genre_source = detectedSource;
             aopts.bpm_hint = bpmHint;
             aopts.key_override_pc = keyOverride;
             aopts.mode_override = modeOverride;
+            std::string canonLow = detectedGenre;
+            std::transform(canonLow.begin(), canonLow.end(), canonLow.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            if (std::find(aopts.tags.begin(), aopts.tags.end(), canonLow) == aopts.tags.end()) {
+                aopts.tags.push_back(canonLow);
+            }
 
-            int bestSrcCount = -1;
-            for (const auto& [srcName, cnt] : pool.source_counts) {
-                if (cnt > bestSrcCount) {
-                    bestSrcCount = cnt;
-                    aopts.genre_source = srcName;
+            const bool allowMerge = mergeExisting || initializedInRun[slug];
+            if (finalizeSingleSongProfile(destJson, ds.song_input, fp, std::move(aopts), allowMerge)) {
+                initializedInRun[slug] = true;
+                ++succeeded;
+                ++completedTracks;
+                if (catalogPath.has_value()) {
+                    (void)writeCatalogFromDir(destRoot, *catalogPath);
                 }
             }
-            if (pool.artist_counts.size() == 1) {
-                aopts.artist = pool.artist_counts.begin()->first;
-            }
 
-            const fs::path destJson = destRoot / (slug + ".json");
-            std::cout << "=== Pooling Genre [" << pool.genre_name << "] (" << pool.songs.size() << " track(s)) ===\n";
-            finalizeAndWriteProfile(destJson, pool.songs, std::move(aopts), succeeded);
+            std::cout << "  ✓ [" << (idx + 1) << "/" << allFiles.size() << "] "
+                      << f.filename().string() << " | " << ds.backend_name
+                      << (fromCache ? " [CACHED]" : "")
+                      << " | " << ds.song_input.notes.size() << " notes"
+                      << " | " << std::fixed << std::setprecision(1) << ds.song_input.bpm << " BPM"
+                      << " | " << pitchClassName(singleProf.harmony.tonic_pc) << " " << modeName(singleProf.harmony.mode)
+                      << " | [" << detectedGenre << " via " << detectedSource << "]"
+                      << " | Sections: Intro/Chorus/Outro (" << std::setprecision(1) << trackSec << "s)\n";
         }
 
+        if (g_stopRequested.load(std::memory_order_acquire)) {
+            std::cout << "Interrupted (Ctrl+C): flushed " << completedTracks
+                      << " completed track(s). Re-run the same command to resume remaining tracks from cache.\n";
+            return 0;
+        }
         if (succeeded == 0) {
+            if (completedTracks > 0) {
+                if (catalogPath.has_value()) {
+                    (void)writeCatalogFromDir(destRoot, *catalogPath);
+                }
+                std::cout << "All " << completedTracks << " track(s) already processed.\n";
+                return 0;
+            }
             std::cerr << "No profiles were successfully created.\n";
             return 1;
         }
-
         if (catalogPath.has_value()) {
             if (writeCatalogFromDir(destRoot, *catalogPath)) {
                 std::cout << "Updated catalog: " << catalogPath->string() << "\n";
@@ -630,41 +896,34 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    const auto batchStart = std::chrono::steady_clock::now();
     for (const auto& job : jobs) {
+        if (g_stopRequested.load(std::memory_order_acquire)) break;
         std::cout << "=== Deconstructing [" << job.id << "] (" << job.files.size() << " file(s)) ===\n";
-        std::vector<SongInput> songs;
-        std::string lastBackend;
-        std::map<std::string, int> genreCounts;
-        std::map<std::string, std::string> genreToSource;
-        std::vector<std::string> collectedTags;
-        std::string singleTitle, singleArtist, singleAlbum;
+        bool jobInitialized = false;
 
-        for (const auto& f : job.files) {
-            std::cout << "  -> " << f.filename().string() << " ... " << std::flush;
-            const auto ds = txService.deconstructFileBlocking(juce::File(f.string()), dopts);
-            if (!ds.success) {
-                std::cout << "SKIPPED (" << ds.error << ")\n";
+        for (size_t idx = 0; idx < job.files.size(); ++idx) {
+            if (g_stopRequested.load(std::memory_order_acquire)) break;
+            const auto& f = job.files[idx];
+            const std::string fp = computeFileFingerprint(f, maxSeconds, forceSpectral);
+
+            if (mergeExisting && profileContainsTrack(job.destJson, fp)) {
+                std::cout << "  ✓ [" << (idx + 1) << "/" << job.files.size() << "] "
+                          << f.filename().string() << " | [SKIP - already in profile]\n";
+                ++completedTracks;
                 continue;
             }
-            lastBackend = ds.backend_name;
-            std::cout << ds.backend_name << " (" << ds.song_input.notes.size()
-                      << " notes @ " << std::fixed << std::setprecision(1) << ds.song_input.bpm << " BPM)";
-            if (ds.metadata.hasGenre()) {
-                std::cout << " [" << ds.metadata.canonical_genre << " via " << ds.metadata.genre_source << "]";
-                genreCounts[ds.metadata.canonical_genre] += 1;
-                genreToSource[ds.metadata.canonical_genre] = ds.metadata.genre_source;
-            }
-            std::cout << "\n";
 
-            for (const auto& t : ds.metadata.tags) {
-                if (std::find(collectedTags.begin(), collectedTags.end(), t) == collectedTags.end()) {
-                    collectedTags.push_back(t);
-                }
-            }
-            if (songs.empty()) {
-                singleTitle = ds.metadata.title;
-                singleArtist = ds.metadata.artist;
-                singleAlbum = ds.metadata.album;
+            bool fromCache = false;
+            double trackSec = 0.0;
+            const auto ds = processOneTrack(idx, job.files.size(), f, batchStart, fp, fromCache, trackSec);
+            clearProgressLine();
+
+            if (g_stopRequested.load(std::memory_order_acquire) && !ds.success) break;
+            if (!ds.success) {
+                std::cout << "  - [" << (idx + 1) << "/" << job.files.size() << "] "
+                          << f.filename().string() << " | SKIPPED (" << ds.error << ")\n";
+                continue;
             }
 
             if (saveMidiDir.has_value()) {
@@ -673,46 +932,68 @@ int main(int argc, char* argv[]) {
                                             ds.song_input.time_sig_num, ds.song_input.time_sig_den,
                                             ds.song_input.notes);
             }
-            songs.push_back(ds.song_input);
-        }
 
-        if (songs.empty()) {
-            std::cerr << "  No valid tracks extracted for " << job.id << "\n";
-            continue;
-        }
+            AnalysisOptions aopts;
+            aopts.id = job.id;
+            aopts.name = (job.files.size() == 1 && !ds.metadata.title.empty() && nameArg.empty())
+                             ? ds.metadata.title
+                             : job.name;
+            aopts.genre = job.explicit_genre ? job.genre
+                                             : (ds.metadata.hasGenre() ? ds.metadata.canonical_genre : "");
+            aopts.genre_source = job.explicit_genre ? "cli"
+                                                    : (ds.metadata.hasGenre() ? ds.metadata.genre_source : "");
+            aopts.source = ds.backend_name.empty() ? "offline_deconstruct" : ("offline_" + ds.backend_name);
+            aopts.tags = ds.metadata.tags;
+            if (job.files.size() == 1) {
+                aopts.artist = ds.metadata.artist;
+                aopts.album = ds.metadata.album;
+            }
+            aopts.bpm_hint = bpmHint;
+            aopts.key_override_pc = keyOverride;
+            aopts.mode_override = modeOverride;
 
-        std::string resolvedGenre = job.genre;
-        std::string resolvedGenreSource = job.explicit_genre ? "cli" : "";
-        if (!job.explicit_genre && !genreCounts.empty()) {
-            int bestCnt = -1;
-            for (const auto& [gName, cnt] : genreCounts) {
-                if (cnt > bestCnt) {
-                    bestCnt = cnt;
-                    resolvedGenre = gName;
-                    resolvedGenreSource = genreToSource[gName];
+            const bool allowMerge = mergeExisting || jobInitialized;
+            if (finalizeSingleSongProfile(job.destJson, ds.song_input, fp, std::move(aopts), allowMerge)) {
+                jobInitialized = true;
+                ++succeeded;
+                ++completedTracks;
+                if (catalogPath.has_value()) {
+                    const fs::path scanDir = outDir.value_or(job.destJson.has_parent_path()
+                                                                 ? job.destJson.parent_path()
+                                                                 : fs::path("."));
+                    (void)writeCatalogFromDir(scanDir, *catalogPath);
                 }
             }
-        }
 
-        AnalysisOptions aopts;
-        aopts.id = job.id;
-        aopts.name = (job.files.size() == 1 && !singleTitle.empty() && nameArg.empty()) ? singleTitle : job.name;
-        aopts.genre = resolvedGenre;
-        aopts.source = lastBackend.empty() ? "offline_deconstruct" : ("offline_" + lastBackend);
-        aopts.tags = std::move(collectedTags);
-        aopts.genre_source = resolvedGenreSource;
-        if (job.files.size() == 1) {
-            aopts.artist = singleArtist;
-            aopts.album = singleAlbum;
+            std::cout << "  ✓ [" << (idx + 1) << "/" << job.files.size() << "] "
+                      << f.filename().string() << " | " << ds.backend_name
+                      << (fromCache ? " [CACHED]" : "")
+                      << " | " << ds.song_input.notes.size() << " notes"
+                      << " | " << std::fixed << std::setprecision(1) << ds.song_input.bpm << " BPM"
+                      << (ds.metadata.hasGenre()
+                              ? (" | [" + ds.metadata.canonical_genre + " via " + ds.metadata.genre_source + "]")
+                              : "")
+                      << " | Sections: Intro/Chorus/Outro (" << std::setprecision(1) << trackSec << "s)\n";
         }
-        aopts.bpm_hint = bpmHint;
-        aopts.key_override_pc = keyOverride;
-        aopts.mode_override = modeOverride;
+    }
 
-        finalizeAndWriteProfile(job.destJson, songs, std::move(aopts), succeeded);
+    if (g_stopRequested.load(std::memory_order_acquire)) {
+        std::cout << "Interrupted (Ctrl+C): flushed " << completedTracks
+                  << " completed track(s). Re-run the same command to resume remaining tracks from cache.\n";
+        return 0;
     }
 
     if (succeeded == 0) {
+        if (completedTracks > 0) {
+            if (catalogPath.has_value()) {
+                const fs::path scanDir = outDir.value_or(jobs.front().destJson.has_parent_path()
+                                                             ? jobs.front().destJson.parent_path()
+                                                             : fs::path("."));
+                (void)writeCatalogFromDir(scanDir, *catalogPath);
+            }
+            std::cout << "All " << completedTracks << " track(s) already processed.\n";
+            return 0;
+        }
         std::cerr << "No profiles were successfully created.\n";
         return 1;
     }

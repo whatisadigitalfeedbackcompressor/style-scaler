@@ -34,6 +34,11 @@ const juce::StringArray& barsChoices() {
     return kBars;
 }
 
+const juce::StringArray& songSectionChoices() {
+    static const juce::StringArray kSecs = {"Intro", "Chorus", "Outro"};
+    return kSecs;
+}
+
 } // namespace
 
 juce::AudioProcessorValueTreeState::ParameterLayout StyleScalerAudioProcessor::createParameterLayout() {
@@ -83,6 +88,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout StyleScalerAudioProcessor::c
         juce::ParameterID{ParamIDs::keyMode, 1}, "Key Mode", keyModeChoices(), 0));
     params.push_back(std::make_unique<juce::AudioParameterChoice>(
         juce::ParameterID{ParamIDs::progressionBars, 1}, "Progression Bars", barsChoices(), 1));
+    params.push_back(std::make_unique<juce::AudioParameterChoice>(
+        juce::ParameterID{ParamIDs::songSection, 1}, "Song Section", songSectionChoices(), 1));
 
     return {params.begin(), params.end()};
 }
@@ -104,7 +111,7 @@ StyleScalerAudioProcessor::StyleScalerAudioProcessor()
              ParamIDs::harmonyBlend, ParamIDs::rhythmBlend, ParamIDs::voicingBlend, ParamIDs::melodyBlend,
              ParamIDs::tempoScale, ParamIDs::grooveSync, ParamIDs::voicingSpread, ParamIDs::melodyDensity,
              ParamIDs::humanize, ParamIDs::enableChords, ParamIDs::enableMelody, ParamIDs::enableBass,
-             ParamIDs::keyRoot, ParamIDs::keyMode, ParamIDs::progressionBars}) {
+             ParamIDs::keyRoot, ParamIDs::keyMode, ParamIDs::progressionBars, ParamIDs::songSection}) {
         apvts_.addParameterListener(pid, this);
     }
 
@@ -134,7 +141,7 @@ StyleScalerAudioProcessor::~StyleScalerAudioProcessor() {
              ParamIDs::harmonyBlend, ParamIDs::rhythmBlend, ParamIDs::voicingBlend, ParamIDs::melodyBlend,
              ParamIDs::tempoScale, ParamIDs::grooveSync, ParamIDs::voicingSpread, ParamIDs::melodyDensity,
              ParamIDs::humanize, ParamIDs::enableChords, ParamIDs::enableMelody, ParamIDs::enableBass,
-             ParamIDs::keyRoot, ParamIDs::keyMode, ParamIDs::progressionBars}) {
+             ParamIDs::keyRoot, ParamIDs::keyMode, ParamIDs::progressionBars, ParamIDs::songSection}) {
         apvts_.removeParameterListener(pid, this);
     }
 }
@@ -243,7 +250,8 @@ void StyleScalerAudioProcessor::parameterChanged(const juce::String& parameterID
                               parameterID == ParamIDs::tempoScale ||
                               parameterID == ParamIDs::keyRoot ||
                               parameterID == ParamIDs::keyMode ||
-                              parameterID == ParamIDs::progressionBars);
+                              parameterID == ParamIDs::progressionBars ||
+                              parameterID == ParamIDs::songSection);
     scheduleBackgroundRegen(rebuildProg, true);
 }
 
@@ -275,6 +283,8 @@ BlendParams StyleScalerAudioProcessor::readBlendParamsLocked() const {
 
     const int scIdx = static_cast<int>(std::llround(apvts_.getRawParameterValue(ParamIDs::tempoScale)->load()));
     bp.tempo_scale = (scIdx == 0) ? TempoScale::Half : (scIdx == 2 ? TempoScale::Double : TempoScale::Normal);
+    const int secIdx = static_cast<int>(std::llround(apvts_.getRawParameterValue(ParamIDs::songSection)->load()));
+    bp.section = static_cast<SongSection>(std::clamp(secIdx, 0, 2));
     bp.key_override_pc = static_cast<int>(std::llround(apvts_.getRawParameterValue(ParamIDs::keyRoot)->load()));
     bp.mode_override = static_cast<Mode>(std::clamp(
         static_cast<int>(std::llround(apvts_.getRawParameterValue(ParamIDs::keyMode)->load())), 0, 7));
@@ -286,6 +296,8 @@ PerformParams StyleScalerAudioProcessor::readPerformParamsLocked() const {
     pp.groove_sync = apvts_.getRawParameterValue(ParamIDs::grooveSync)->load() >= 0.5f;
     const int scIdx = static_cast<int>(std::llround(apvts_.getRawParameterValue(ParamIDs::tempoScale)->load()));
     pp.tempo_scale = (scIdx == 0) ? TempoScale::Half : (scIdx == 2 ? TempoScale::Double : TempoScale::Normal);
+    const int secIdx = static_cast<int>(std::llround(apvts_.getRawParameterValue(ParamIDs::songSection)->load()));
+    pp.section = static_cast<SongSection>(std::clamp(secIdx, 0, 2));
     pp.voicing_spread = apvts_.getRawParameterValue(ParamIDs::voicingSpread)->load();
     pp.melody_density = apvts_.getRawParameterValue(ParamIDs::melodyDensity)->load();
     pp.humanize = apvts_.getRawParameterValue(ParamIDs::humanize)->load();
@@ -361,6 +373,34 @@ void StyleScalerAudioProcessor::performRebuildSync(bool rebuildProgression, bool
         return x.channel < y.channel;
     });
 
+    // Precompute up to 16 pad chord voicings for zero-allocation MIDI Bind (C2..D#3)
+    uint8_t padIdx = 0;
+    std::vector<int> prevPadVoicing;
+    for (size_t i = 0; i < nextProg.size() && padIdx < 16; ++i) {
+        const auto notes = VoicingEngine::voiceChord(
+            nextProg[i].chord, blended.harmony.tonic_pc, blended.harmony.mode, blended.voicing,
+            prevPadVoicing, pp.voicing_spread, nextProg[i].octave_shift,
+            nextProg[i].inversion_override, nextProg[i].richness_override);
+        auto& pad = buf->pad_chords[padIdx++];
+        pad.num_notes = static_cast<uint8_t>(std::min<size_t>(notes.size(), 8));
+        for (uint8_t k = 0; k < pad.num_notes; ++k) {
+            pad.pitches[k] = static_cast<uint8_t>(std::clamp(notes[k], 0, 127));
+        }
+        prevPadVoicing = notes;
+    }
+    for (size_t i = 0; i < blended.harmony.vocabulary.size() && padIdx < 16; ++i) {
+        const auto notes = VoicingEngine::voiceChord(
+            blended.harmony.vocabulary[i].chord, blended.harmony.tonic_pc, blended.harmony.mode,
+            blended.voicing, prevPadVoicing, pp.voicing_spread);
+        auto& pad = buf->pad_chords[padIdx++];
+        pad.num_notes = static_cast<uint8_t>(std::min<size_t>(notes.size(), 8));
+        for (uint8_t k = 0; k < pad.num_notes; ++k) {
+            pad.pitches[k] = static_cast<uint8_t>(std::clamp(notes[k], 0, 127));
+        }
+        prevPadVoicing = notes;
+    }
+    buf->num_pads = padIdx;
+
     if (ticket != regen_ticket_.load(std::memory_order_acquire)) {
         return;
     }
@@ -399,6 +439,8 @@ StyleScalerAudioProcessor::EngineSnapshot StyleScalerAudioProcessor::getSnapshot
     snap.num_bars = readProgressionBarsLocked();
     const int scIdx = static_cast<int>(std::llround(apvts_.getRawParameterValue(ParamIDs::tempoScale)->load()));
     snap.tempo_scale = (scIdx == 0) ? TempoScale::Half : (scIdx == 2 ? TempoScale::Double : TempoScale::Normal);
+    const int secIdx = static_cast<int>(std::llround(apvts_.getRawParameterValue(ParamIDs::songSection)->load()));
+    snap.song_section = static_cast<SongSection>(std::clamp(secIdx, 0, 2));
     return snap;
 }
 
@@ -838,7 +880,8 @@ bool StyleScalerAudioProcessor::exportMidiToFile(const juce::File& destFile,
                                                  int channelFilter,
                                                  std::string& outError) const {
     const auto snap = getSnapshot();
-    const double bpm = snap.blended.default_bpm;
+    const double liveBpm = currentBpm();
+    const double bpm = (isDawSync() && liveBpm > 20.0) ? liveBpm : snap.blended.default_bpm;
     auto res = SmfWriter::writeFilteredType1(
         destFile.getFullPathName().toStdString(),
         bpm,
@@ -951,8 +994,7 @@ void StyleScalerAudioProcessor::setStateInformation(const void* data, int sizeIn
         }
     }
 
-    const uint64_t t = regen_ticket_.fetch_add(1, std::memory_order_acq_rel) + 1;
-    performRebuildSync(false, true, t);
+    scheduleBackgroundRegen(false, true);
 }
 
 juce::AudioProcessorEditor* StyleScalerAudioProcessor::createEditor() {

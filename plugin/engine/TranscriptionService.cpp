@@ -30,6 +30,8 @@ std::vector<NoteEvent> timedNotesToEvents(const std::vector<TimedNoteSec>& notes
             ev.channel = 10;
         } else if (ev.program >= 32 && ev.program <= 39) {
             ev.channel = 3;
+        } else if ((ev.program >= 56 && ev.program <= 87) || (ev.program >= 104 && ev.program <= 111)) {
+            ev.channel = 2;
         } else {
             ev.channel = 1;
         }
@@ -79,6 +81,10 @@ std::vector<TimedNoteSec> SpectralFallbackTranscriber::transcribe(
     std::array<float, 128> activePeakMag{};
     activePeakMag.fill(0.0f);
 
+    // 5-frame rolling magnitude buffer for HPSS temporal median drum-transient rejection
+    std::array<std::array<float, 128>, 5> magHistory{};
+    size_t histCount = 0;
+
     const double frameDurSec = static_cast<double>(kHopSamples) / kSampleRate;
 
     for (size_t frame = 0; frame < totalFrames; ++frame) {
@@ -95,18 +101,35 @@ std::vector<TimedNoteSec> SpectralFallbackTranscriber::transcribe(
         }
         fft.performFrequencyOnlyForwardTransform(fftData.data());
 
-        std::array<float, 128> pitchMag{};
-        float frameMax = 0.0f;
+        auto& curRaw = magHistory[frame % 5];
+        curRaw.fill(0.0f);
         for (const auto& mb : midiBins) {
             float peak = 0.0f;
             for (int b = mb.binLo; b <= mb.binHi; ++b) {
                 peak = std::max(peak, fftData[static_cast<size_t>(b)]);
             }
-            if (mb.pitch >= 40) {
-                peak = std::max(0.0f, peak - 0.30f * pitchMag[static_cast<size_t>(mb.pitch - 12)]);
+            curRaw[static_cast<size_t>(mb.pitch)] = peak;
+        }
+        histCount = std::min<size_t>(5, histCount + 1);
+
+        std::array<float, 128> pitchMag{};
+        float frameMax = 0.0f;
+        for (const auto& mb : midiBins) {
+            const size_t pIdx = static_cast<size_t>(mb.pitch);
+            float medianMag = curRaw[pIdx];
+            if (histCount >= 3) {
+                std::array<float, 5> tmp{};
+                for (size_t h = 0; h < histCount; ++h) tmp[h] = magHistory[h][pIdx];
+                std::sort(tmp.begin(), tmp.begin() + static_cast<std::ptrdiff_t>(histCount));
+                medianMag = tmp[histCount / 2];
             }
-            pitchMag[static_cast<size_t>(mb.pitch)] = peak;
-            frameMax = std::max(frameMax, peak);
+            float suppressed = medianMag;
+            if (mb.pitch >= 40) suppressed -= 0.35f * pitchMag[pIdx - 12]; // 2nd harmonic
+            if (mb.pitch >= 47) suppressed -= 0.22f * pitchMag[pIdx - 19]; // 3rd harmonic
+            if (mb.pitch >= 52) suppressed -= 0.15f * pitchMag[pIdx - 24]; // 4th harmonic
+            suppressed = std::max(0.0f, suppressed);
+            pitchMag[pIdx] = suppressed;
+            frameMax = std::max(frameMax, suppressed);
         }
 
         std::array<bool, 128> nowActive{};
@@ -559,16 +582,77 @@ std::vector<float> TranscriptionService::decodeAudioFileTo16kMono(const juce::Fi
     }
 
     const double effectiveMaxSec = (maxSeconds > 0.0) ? maxSeconds : 600.0;
+    const juce::int64 totalFileSamples = reader->lengthInSamples;
     const int maxSamples = static_cast<int>(std::min<juce::int64>(
-        reader->lengthInSamples,
+        totalFileSamples,
         static_cast<juce::int64>(std::llround(reader->sampleRate * effectiveMaxSec))));
     if (maxSamples <= 0) {
         outError = "Audio file is empty";
         return {};
     }
 
+    // Smart harmonic window finder: when cropping a longer song to maxSeconds, find the
+    // contiguous maxSeconds window with the highest tonal (non-silent, non-percussive) energy.
+    juce::int64 startSample = 0;
+    if (maxSeconds > 0.0 &&
+        totalFileSamples > static_cast<juce::int64>(std::llround(reader->sampleRate * maxSeconds * 1.25))) {
+        const juce::int64 scanLimit = std::min<juce::int64>(
+            totalFileSamples,
+            static_cast<juce::int64>(std::llround(reader->sampleRate * 300.0)));
+        const int blockSamples = std::max(1024, static_cast<int>(std::llround(reader->sampleRate * 2.0)));
+        const int blocksPerWindow = std::max(1, maxSamples / blockSamples);
+        const int nBlocks = static_cast<int>(scanLimit / blockSamples);
+
+        if (nBlocks > blocksPerWindow) {
+            juce::AudioBuffer<float> scanBuf(static_cast<int>(reader->numChannels), blockSamples);
+            std::vector<double> blockScores(static_cast<size_t>(nBlocks), 0.0);
+            const int nChScan = std::max(1, static_cast<int>(reader->numChannels));
+
+            for (int b = 0; b < nBlocks; ++b) {
+                const juce::int64 bStart = static_cast<juce::int64>(b) * blockSamples;
+                if (!reader->read(&scanBuf, 0, blockSamples, bStart, true, true)) continue;
+                double sqSum = 0.0;
+                int zeroCrossings = 0;
+                float prevSample = 0.0f;
+                for (int i = 0; i < blockSamples; ++i) {
+                    float m = 0.0f;
+                    for (int ch = 0; ch < nChScan; ++ch) m += scanBuf.getSample(ch, i);
+                    m /= static_cast<float>(nChScan);
+                    sqSum += static_cast<double>(m) * static_cast<double>(m);
+                    if (i > 0 && ((m >= 0.0f && prevSample < 0.0f) || (m < 0.0f && prevSample >= 0.0f))) {
+                        ++zeroCrossings;
+                    }
+                    prevSample = m;
+                }
+                const double rms = std::sqrt(sqSum / static_cast<double>(blockSamples));
+                const double zcr = static_cast<double>(zeroCrossings) / static_cast<double>(blockSamples);
+                if (rms > 0.01) {
+                    const double tonalWeight = (zcr > 0.22) ? 0.35 : 1.0;
+                    blockScores[static_cast<size_t>(b)] = rms * tonalWeight;
+                }
+            }
+
+            double curSum = 0.0;
+            for (int b = 0; b < blocksPerWindow; ++b) curSum += blockScores[static_cast<size_t>(b)];
+            double bestSum = curSum;
+            int bestStartBlock = 0;
+            for (int b = blocksPerWindow; b < nBlocks; ++b) {
+                curSum += blockScores[static_cast<size_t>(b)] - blockScores[static_cast<size_t>(b - blocksPerWindow)];
+                if (curSum > bestSum) {
+                    bestSum = curSum;
+                    bestStartBlock = b - blocksPerWindow + 1;
+                }
+            }
+            if (bestSum > 0.0) {
+                startSample = std::min<juce::int64>(
+                    static_cast<juce::int64>(bestStartBlock) * blockSamples,
+                    totalFileSamples - maxSamples);
+            }
+        }
+    }
+
     juce::AudioBuffer<float> buf(static_cast<int>(reader->numChannels), maxSamples);
-    if (!reader->read(&buf, 0, maxSamples, 0, true, true)) {
+    if (!reader->read(&buf, 0, maxSamples, startSample, true, true)) {
         outError = "Failed reading samples from audio file";
         return {};
     }

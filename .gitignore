@@ -5,6 +5,9 @@ out/
 dist/
 cmake-build-*/
 .vs/
+.server_backup/
+.deconstruct_cache/
+scripts/
 
 # Python virtual environments & caches
 .venv/

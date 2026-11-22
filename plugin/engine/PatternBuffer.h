@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <vector>
 
@@ -13,10 +14,17 @@ struct SequencerEvent {
     uint8_t channel = 1; // 1=Chords, 2=Melody, 3=Bass
 };
 
+struct PadChordVoicing {
+    uint8_t num_notes = 0;
+    std::array<uint8_t, 8> pitches{};
+};
+
 struct PatternBuffer {
     uint64_t generation = 0;
     double loop_beats = 16.0;
     std::vector<SequencerEvent> events; // sorted by beat_pos
+    uint8_t num_pads = 0;
+    std::array<PadChordVoicing, 16> pad_chords{};
 };
 
 struct AuditionEvent {

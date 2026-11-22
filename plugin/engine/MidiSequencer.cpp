@@ -27,6 +27,10 @@ void MidiSequencer::reset() noexcept {
     prev_channel_enabled_ = {true, true, true};
     for (auto& chArr : seq_note_rem_beats_) chArr.fill(-1.0);
     for (auto& chArr : aud_note_active_) chArr.fill(false);
+    for (auto& pad : bound_pad_active_) {
+        pad.num_notes = 0;
+        pad.pitches.fill(0);
+    }
     for (auto& m : active_masks_) m.store(0ULL, std::memory_order_relaxed);
     ui_beat_in_loop_.store(0.0, std::memory_order_relaxed);
     ui_playing_.store(false, std::memory_order_relaxed);
@@ -88,6 +92,30 @@ void MidiSequencer::processBlock(int numSamples,
                                  bool enableBass) noexcept {
     if (numSamples <= 0) return;
 
+    // 0. Capture incoming MIDI Bind events (notes 36..51 = C2..D#3) before clearing outMidi
+    struct IncomingBindEv {
+        int sample_pos = 0;
+        uint8_t pad_idx = 0;
+        uint8_t velocity = 96;
+        bool note_on = false;
+    };
+    std::array<IncomingBindEv, 64> bindEvents{};
+    size_t numBindEvents = 0;
+    for (const auto meta : outMidi) {
+        if (numBindEvents >= bindEvents.size()) break;
+        const auto msg = meta.getMessage();
+        const int note = msg.getNoteNumber();
+        if (note >= 36 && note <= 51 && (msg.isNoteOn() || msg.isNoteOff())) {
+            bindEvents[numBindEvents++] = IncomingBindEv{
+                std::clamp(meta.samplePosition, 0, numSamples - 1),
+                static_cast<uint8_t>(note - 36),
+                static_cast<uint8_t>(std::clamp<int>(msg.getVelocity(), 1, 127)),
+                msg.isNoteOn() && msg.getVelocity() > 0
+            };
+        }
+    }
+    outMidi.clear();
+
     // 1. Drain lock-free audition queue at sample 0 (instant pad/keyboard feedback)
     AuditionEvent aud{};
     while (audition_queue_.pop(aud)) {
@@ -146,6 +174,41 @@ void MidiSequencer::processBlock(int numSamples,
 
     LockFreePatternSlot::ScopedAudioRead guard(patternSlot);
     const PatternBuffer* pat = guard.get();
+
+    // 2b. Process Scaler MIDI Bind live pad triggers (C2..D#3) using preallocated PatternBuffer pad chords
+    for (size_t i = 0; i < numBindEvents; ++i) {
+        const auto& bev = bindEvents[i];
+        auto& activePad = bound_pad_active_[bev.pad_idx];
+        auto releaseBoundPad = [&](int sPos) {
+            for (uint8_t k = 0; k < activePad.num_notes; ++k) {
+                const int p = std::clamp<int>(activePad.pitches[k], 0, 127);
+                aud_note_active_[0][static_cast<size_t>(p)] = false;
+                if (seq_note_rem_beats_[0][static_cast<size_t>(p)] < 0.0) {
+                    outMidi.addEvent(juce::MidiMessage::noteOff(1, p), sPos);
+                }
+            }
+            activePad.num_notes = 0;
+        };
+
+        if (bev.note_on) {
+            releaseBoundPad(bev.sample_pos);
+            if (pat != nullptr && bev.pad_idx < pat->num_pads) {
+                const auto& srcPad = pat->pad_chords[bev.pad_idx];
+                activePad.num_notes = std::min<uint8_t>(srcPad.num_notes, 8);
+                for (uint8_t k = 0; k < activePad.num_notes; ++k) {
+                    const int p = std::clamp<int>(srcPad.pitches[k], 0, 127);
+                    activePad.pitches[k] = static_cast<uint8_t>(p);
+                    if (aud_note_active_[0][static_cast<size_t>(p)]) {
+                        outMidi.addEvent(juce::MidiMessage::noteOff(1, p), bev.sample_pos);
+                    }
+                    aud_note_active_[0][static_cast<size_t>(p)] = true;
+                    outMidi.addEvent(juce::MidiMessage::noteOn(1, p, bev.velocity), bev.sample_pos);
+                }
+            }
+        } else {
+            releaseBoundPad(bev.sample_pos);
+        }
+    }
 
     if (!isPlaying || pat == nullptr || pat->loop_beats <= 0.0) {
         if (was_playing_) {

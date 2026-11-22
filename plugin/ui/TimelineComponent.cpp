@@ -214,6 +214,15 @@ TimelineComponent::TimelineComponent(StyleScalerAudioProcessor& processor)
     playhead_lbl_.setFont(juce::Font(juce::FontOptions(13.0f)));
     playhead_lbl_.setColour(juce::Label::textColourId, Theme::slotACyan);
 
+    auto setupSecBtn = [&](juce::TextButton& btn, int choiceIdx) {
+        addAndMakeVisible(btn);
+        btn.setClickingTogglesState(false);
+        btn.onClick = [this, choiceIdx]() { setSectionChoiceIndex(choiceIdx); };
+    };
+    setupSecBtn(sec_intro_btn_, 0);
+    setupSecBtn(sec_chorus_btn_, 1);
+    setupSecBtn(sec_outro_btn_, 2);
+
     auto setupBarsBtn = [&](juce::TextButton& btn, int choiceIdx) {
         addAndMakeVisible(btn);
         btn.onClick = [this, choiceIdx]() { setBarChoiceIndex(choiceIdx); };
@@ -242,8 +251,23 @@ void TimelineComponent::setBarChoiceIndex(int choiceIndex) {
     }
 }
 
+void TimelineComponent::setSectionChoiceIndex(int choiceIndex) {
+    if (auto* p = processor_.apvts().getParameter(ParamIDs::songSection)) {
+        p->setValueNotifyingHost(p->convertTo0to1(static_cast<float>(choiceIndex)));
+    }
+}
+
 void TimelineComponent::refreshFromProcessor() {
     const auto snap = processor_.getSnapshot();
+    sec_intro_btn_.setToggleState(snap.song_section == SongSection::Intro, juce::dontSendNotification);
+    sec_chorus_btn_.setToggleState(snap.song_section == SongSection::Chorus, juce::dontSendNotification);
+    sec_outro_btn_.setToggleState(snap.song_section == SongSection::Outro, juce::dontSendNotification);
+    sec_intro_btn_.setColour(juce::TextButton::buttonColourId,
+                             snap.song_section == SongSection::Intro ? Theme::slotACyan.withAlpha(0.28f) : Theme::bgElevated);
+    sec_chorus_btn_.setColour(juce::TextButton::buttonColourId,
+                              snap.song_section == SongSection::Chorus ? Theme::slotACyan.withAlpha(0.28f) : Theme::bgElevated);
+    sec_outro_btn_.setColour(juce::TextButton::buttonColourId,
+                             snap.song_section == SongSection::Outro ? Theme::slotACyan.withAlpha(0.28f) : Theme::bgElevated);
     bars4_btn_.setToggleState(snap.num_bars == 4, juce::dontSendNotification);
     bars8_btn_.setToggleState(snap.num_bars == 8, juce::dontSendNotification);
     bars16_btn_.setToggleState(snap.num_bars == 16, juce::dontSendNotification);
@@ -310,18 +334,24 @@ void TimelineComponent::paint(juce::Graphics& g) {
 void TimelineComponent::resized() {
     auto b = getLocalBounds().reduced(10, 6);
     auto top = b.removeFromTop(24);
-    header_lbl_.setBounds(top.removeFromLeft(168));
-    playhead_lbl_.setBounds(top.removeFromLeft(220));
+    header_lbl_.setBounds(top.removeFromLeft(152));
+    playhead_lbl_.setBounds(top.removeFromLeft(195));
 
-    regen_unlocked_btn_.setBounds(top.removeFromRight(114));
-    top.removeFromRight(6);
-    clear_locks_btn_.setBounds(top.removeFromRight(88));
-    top.removeFromRight(10);
-    bars16_btn_.setBounds(top.removeFromRight(58));
-    top.removeFromRight(3);
-    bars8_btn_.setBounds(top.removeFromRight(54));
-    top.removeFromRight(3);
-    bars4_btn_.setBounds(top.removeFromRight(54));
+    regen_unlocked_btn_.setBounds(top.removeFromRight(106));
+    top.removeFromRight(5);
+    clear_locks_btn_.setBounds(top.removeFromRight(80));
+    top.removeFromRight(8);
+    bars16_btn_.setBounds(top.removeFromRight(52));
+    top.removeFromRight(2);
+    bars8_btn_.setBounds(top.removeFromRight(48));
+    top.removeFromRight(2);
+    bars4_btn_.setBounds(top.removeFromRight(48));
+    top.removeFromRight(8);
+    sec_outro_btn_.setBounds(top.removeFromRight(46));
+    top.removeFromRight(2);
+    sec_chorus_btn_.setBounds(top.removeFromRight(52));
+    top.removeFromRight(2);
+    sec_intro_btn_.setBounds(top.removeFromRight(42));
 
     b.removeFromTop(5);
     viewport_.setBounds(b);

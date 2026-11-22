@@ -35,6 +35,8 @@ struct SongInput {
 class MidiStyleAnalyzer {
 public:
     static double estimateBpm(const std::vector<TimedNoteSec>& notes);
+    static double estimateBeatPhaseSec(const std::vector<TimedNoteSec>& notes, double bpm, int timeSigNum = 4, int timeSigDen = 4);
+    static double estimateBeatPhaseBeats(const std::vector<NoteEvent>& events, double beatsPerBar = 4.0);
 
     static StyleProfile analyze(const std::vector<NoteEvent>& events,
                                 double bpm,
@@ -45,6 +47,9 @@ public:
 
     static StyleProfile analyzeCorpus(const std::vector<SongInput>& songs,
                                       const AnalysisOptions& options = {});
+
+    static StyleProfile mergeProfiles(const StyleProfile& existing,
+                                      const StyleProfile& incoming);
 };
 
 } // namespace style_scaler
