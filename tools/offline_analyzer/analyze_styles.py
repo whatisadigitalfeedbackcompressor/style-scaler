@@ -862,7 +862,8 @@ def main() -> None:
 
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(profile, indent=2) + "\n", encoding="utf-8")
+    with out_path.open("w", encoding="utf-8", newline="\n") as f:
+        f.write(json.dumps(profile, indent=2) + "\n")
     print(f"Wrote {out_path} ({len(files)} reference files analyzed, key_pc={profile['harmony']['tonic_pc']}, mode={profile['harmony']['mode']})")
 
 

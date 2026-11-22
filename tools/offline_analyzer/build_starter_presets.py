@@ -366,7 +366,8 @@ def main() -> None:
                 sub_bass_clearance_override=clearance,
                 forced_mode=mode,
             )
-            out_file.write_text(json.dumps(profile, indent=2) + "\n", encoding="utf-8")
+            with out_file.open("w", encoding="utf-8", newline="\n") as f:
+                f.write(json.dumps(profile, indent=2) + "\n")
             print(
                 f"Generated {out_file.name}: vocab={len(profile['harmony']['vocabulary'])}, "
                 f"swing={profile['rhythm']['swing']:.2f}, sync={profile['rhythm']['syncopation']:.2f}, "

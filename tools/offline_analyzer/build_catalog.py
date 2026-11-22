@@ -30,11 +30,11 @@ REQUIRED_TOP_KEYS = {
 
 
 def sha256_file(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            h.update(chunk)
-    return h.hexdigest().lower()
+    raw = path.read_bytes()
+    lf_bytes = raw.replace(b"\r\n", b"\n")
+    if raw != lf_bytes:
+        path.write_bytes(lf_bytes)
+    return hashlib.sha256(lf_bytes).hexdigest().lower()
 
 
 def build_catalog(styles_dir: Path, out_catalog: Path, catalog_name: str) -> Dict[str, Any]:
