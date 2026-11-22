@@ -14,6 +14,7 @@
 #include <atomic>
 #include <chrono>
 #include <csignal>
+#include <cstdio>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
@@ -25,6 +26,12 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+#ifdef _WIN32
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
 
 namespace fs = std::filesystem;
 using namespace style_scaler;
@@ -247,12 +254,35 @@ void saveCachedSong(const fs::path& cacheFile,
     } catch (...) {}
 }
 
-bool profileContainsTrack(const fs::path& jsonPath, const std::string& fingerprint) {
+bool isStdoutTty() {
+#ifdef _WIN32
+    return _isatty(_fileno(stdout)) != 0;
+#else
+    return isatty(fileno(stdout)) != 0;
+#endif
+}
+
+std::vector<std::string> buildTrackFingerprints(const fs::path& p, double maxSeconds, bool forceSpectral) {
+    std::vector<std::string> fps;
+    fps.push_back(computeFileFingerprint(p, maxSeconds, forceSpectral));
+    if (maxSeconds > 0.0) {
+        fps.push_back(computeFileFingerprint(p, 0.0, forceSpectral));
+    }
+    return fps;
+}
+
+bool profileContainsAnyTrack(const fs::path& jsonPath, const std::vector<std::string>& fingerprints) {
     if (!fs::exists(jsonPath)) return false;
     auto prof = loadFromFile(jsonPath);
     if (!prof) return false;
-    return std::find(prof->processed_tracks.begin(), prof->processed_tracks.end(), fingerprint) !=
-           prof->processed_tracks.end();
+    for (const auto& fp : fingerprints) {
+        if (!fp.empty() &&
+            std::find(prof->processed_tracks.begin(), prof->processed_tracks.end(), fp) !=
+                prof->processed_tracks.end()) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool writeCatalogFromDir(const fs::path& stylesDir, const fs::path& catalogPath) {
@@ -355,12 +385,18 @@ void renderProgressLine(size_t idx,
         << shortStage << " | Elapsed " << formatMmSs(elapsedSec)
         << " | ETA " << (totalFrac > 0.01 ? formatMmSs(etaSec) : "--:--");
     std::string line = oss.str();
-    if (line.size() < 118) line.append(118 - line.size(), ' ');
-    std::cout << "\r" << line << std::flush;
+    if (isStdoutTty()) {
+        if (line.size() < 118) line.append(118 - line.size(), ' ');
+        std::cout << "\r" << line << std::flush;
+    } else {
+        std::cout << line << "\n" << std::flush;
+    }
 }
 
 void clearProgressLine() {
-    std::cout << "\r" << std::string(120, ' ') << "\r" << std::flush;
+    if (isStdoutTty()) {
+        std::cout << "\r" << std::string(120, ' ') << "\r" << std::flush;
+    }
 }
 
 } // namespace
@@ -543,12 +579,13 @@ int main(int argc, char* argv[]) {
 
     auto finalizeSingleSongProfile = [&](const fs::path& destJson,
                                          const SongInput& song,
-                                         const std::string& fingerprint,
+                                         const std::vector<std::string>& fingerprints,
                                          AnalysisOptions aopts,
                                          bool allowMerge) {
+        const std::string primaryFp = fingerprints.empty() ? std::string() : fingerprints.front();
         StyleProfile incoming = MidiStyleAnalyzer::analyze(song.notes, song.bpm, aopts);
         incoming.track_count = 1;
-        if (!fingerprint.empty()) incoming.processed_tracks.push_back(fingerprint);
+        if (!primaryFp.empty()) incoming.processed_tracks.push_back(primaryFp);
 
         if (incoming.genre.empty() || incoming.genre == "Analyzed" || incoming.genre == "Deconstructed" ||
             incoming.genre == "Deconstructed Song") {
@@ -572,10 +609,12 @@ int main(int argc, char* argv[]) {
         StyleProfile finalProf = incoming;
         if (allowMerge && fs::exists(destJson)) {
             if (auto ex = loadFromFile(destJson)) {
-                if (!fingerprint.empty() &&
-                    std::find(ex->processed_tracks.begin(), ex->processed_tracks.end(), fingerprint) !=
-                        ex->processed_tracks.end()) {
-                    return true;
+                for (const auto& fp : fingerprints) {
+                    if (!fp.empty() &&
+                        std::find(ex->processed_tracks.begin(), ex->processed_tracks.end(), fp) !=
+                            ex->processed_tracks.end()) {
+                        return true;
+                    }
                 }
                 finalProf = MidiStyleAnalyzer::mergeProfiles(*ex, incoming);
             }
@@ -610,21 +649,28 @@ int main(int argc, char* argv[]) {
                                size_t total,
                                const fs::path& f,
                                const std::chrono::steady_clock::time_point& batchStart,
-                               const std::string& fingerprint,
+                               const std::vector<std::string>& fingerprints,
                                bool& outFromCache,
                                double& outTrackSec) -> TranscriptionService::DeconstructedSong {
         outFromCache = false;
         const auto t0 = std::chrono::steady_clock::now();
         TranscriptionService::DeconstructedSong ds;
+        const std::string primaryFp = fingerprints.empty() ? std::string() : fingerprints.front();
 
-        const fs::path cacheFile = cacheDir / (fingerprint + ".json");
-        if (useCache && loadCachedSong(cacheFile, ds)) {
-            outFromCache = true;
-            outTrackSec = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-            return ds;
+        if (useCache) {
+            for (const auto& fp : fingerprints) {
+                const fs::path cacheFile = cacheDir / (fp + ".json");
+                if (loadCachedSong(cacheFile, ds)) {
+                    outFromCache = true;
+                    outTrackSec = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+                    return ds;
+                }
+            }
         }
 
-        int lastPct = -2;
+        int lastPct = -4;
+        const bool tty = isStdoutTty();
+        const int minPctStep = tty ? 1 : 3;
         auto lastPrint = std::chrono::steady_clock::now() - std::chrono::milliseconds(200);
         ds = txService.deconstructFileBlocking(
             juce::File(f.string()), dopts,
@@ -636,7 +682,7 @@ int main(int argc, char* argv[]) {
                 const int pct = static_cast<int>(std::llround(trackProg * 100.0f));
                 const auto now = std::chrono::steady_clock::now();
                 const auto dtMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastPrint).count();
-                if (std::abs(pct - lastPct) >= 1 || dtMs >= 65) {
+                if (std::abs(pct - lastPct) >= minPctStep || (tty && dtMs >= 65)) {
                     lastPct = pct;
                     lastPrint = now;
                     const double elapsed = std::chrono::duration<double>(now - batchStart).count();
@@ -646,8 +692,8 @@ int main(int argc, char* argv[]) {
             });
 
         outTrackSec = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-        if (ds.success && useCache) {
-            saveCachedSong(cacheFile, fingerprint, ds);
+        if (ds.success && useCache && !primaryFp.empty()) {
+            saveCachedSong(cacheDir / (primaryFp + ".json"), primaryFp, ds);
         }
         return ds;
     };
@@ -679,7 +725,7 @@ int main(int argc, char* argv[]) {
         for (size_t idx = 0; idx < allFiles.size(); ++idx) {
             if (g_stopRequested.load(std::memory_order_acquire)) break;
             const auto& f = allFiles[idx];
-            const std::string fp = computeFileFingerprint(f, maxSeconds, forceSpectral);
+            const auto fps = buildTrackFingerprints(f, maxSeconds, forceSpectral);
 
             // Fast deduplication check across existing target JSONs in destRoot when merging
             if (mergeExisting && fs::exists(destRoot)) {
@@ -687,7 +733,7 @@ int main(int argc, char* argv[]) {
                 for (const auto& e : fs::directory_iterator(destRoot)) {
                     if (e.is_regular_file() && e.path().extension() == ".json" &&
                         e.path().filename() != "catalog.json" &&
-                        profileContainsTrack(e.path(), fp)) {
+                        profileContainsAnyTrack(e.path(), fps)) {
                         alreadyPresent = true;
                         break;
                     }
@@ -702,7 +748,7 @@ int main(int argc, char* argv[]) {
 
             bool fromCache = false;
             double trackSec = 0.0;
-            const auto ds = processOneTrack(idx, allFiles.size(), f, batchStart, fp, fromCache, trackSec);
+            const auto ds = processOneTrack(idx, allFiles.size(), f, batchStart, fps, fromCache, trackSec);
             clearProgressLine();
 
             if (g_stopRequested.load(std::memory_order_acquire) && !ds.success) {
@@ -758,7 +804,7 @@ int main(int argc, char* argv[]) {
             }
 
             const bool allowMerge = mergeExisting || initializedInRun[slug];
-            if (finalizeSingleSongProfile(destJson, ds.song_input, fp, std::move(aopts), allowMerge)) {
+            if (finalizeSingleSongProfile(destJson, ds.song_input, fps, std::move(aopts), allowMerge)) {
                 initializedInRun[slug] = true;
                 ++succeeded;
                 ++completedTracks;
@@ -905,9 +951,9 @@ int main(int argc, char* argv[]) {
         for (size_t idx = 0; idx < job.files.size(); ++idx) {
             if (g_stopRequested.load(std::memory_order_acquire)) break;
             const auto& f = job.files[idx];
-            const std::string fp = computeFileFingerprint(f, maxSeconds, forceSpectral);
+            const auto fps = buildTrackFingerprints(f, maxSeconds, forceSpectral);
 
-            if (mergeExisting && profileContainsTrack(job.destJson, fp)) {
+            if (mergeExisting && profileContainsAnyTrack(job.destJson, fps)) {
                 std::cout << "  ✓ [" << (idx + 1) << "/" << job.files.size() << "] "
                           << f.filename().string() << " | [SKIP - already in profile]\n";
                 ++completedTracks;
@@ -916,7 +962,7 @@ int main(int argc, char* argv[]) {
 
             bool fromCache = false;
             double trackSec = 0.0;
-            const auto ds = processOneTrack(idx, job.files.size(), f, batchStart, fp, fromCache, trackSec);
+            const auto ds = processOneTrack(idx, job.files.size(), f, batchStart, fps, fromCache, trackSec);
             clearProgressLine();
 
             if (g_stopRequested.load(std::memory_order_acquire) && !ds.success) break;
@@ -953,7 +999,7 @@ int main(int argc, char* argv[]) {
             aopts.mode_override = modeOverride;
 
             const bool allowMerge = mergeExisting || jobInitialized;
-            if (finalizeSingleSongProfile(job.destJson, ds.song_input, fp, std::move(aopts), allowMerge)) {
+            if (finalizeSingleSongProfile(job.destJson, ds.song_input, fps, std::move(aopts), allowMerge)) {
                 jobInitialized = true;
                 ++succeeded;
                 ++completedTracks;

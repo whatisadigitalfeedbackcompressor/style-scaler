@@ -529,3 +529,79 @@ TEST_CASE("SongSection parameter switches Intro/Chorus/Outro on StyleScalerAudio
     secParam->setValueNotifyingHost(secParam->convertTo0to1(2.0f));
     CHECK(proc.getSnapshot().song_section == SongSection::Outro);
 }
+
+TEST_CASE("TranscriptionService::decodeAudioFileTo16kMono multi-window Intro/Chorus/Outro sampler", "[transcription][windowing]") {
+    const juce::File tmpDir = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                                  .getChildFile("style_scaler_multiwindow_test");
+    tmpDir.deleteRecursively();
+    tmpDir.createDirectory();
+    const juce::File wavFile = tmpDir.getChildFile("three_sections_90s.wav");
+
+    constexpr int kSr = 16000;
+    constexpr int kTotalSec = 90;
+    constexpr int kTotalSamples = kSr * kTotalSec;
+    juce::AudioBuffer<float> audio(1, kTotalSamples);
+    audio.clear();
+    float* data = audio.getWritePointer(0);
+    constexpr double kTwoPi = 6.28318530717958647692;
+
+    // 0..20s: Intro (220 Hz), 20..35s: silence, 35..55s: Chorus (440 Hz), 55..70s: silence, 70..90s: Outro (660 Hz)
+    for (int i = 0; i < kTotalSamples; ++i) {
+        const double t = static_cast<double>(i) / kSr;
+        if (t < 20.0) {
+            data[i] = 0.4f * static_cast<float>(std::sin(kTwoPi * 220.0 * t));
+        } else if (t >= 35.0 && t < 55.0) {
+            data[i] = 0.6f * static_cast<float>(std::sin(kTwoPi * 440.0 * t));
+        } else if (t >= 70.0) {
+            data[i] = 0.4f * static_cast<float>(std::sin(kTwoPi * 660.0 * t));
+        }
+    }
+
+    juce::WavAudioFormat wavFmt;
+    {
+        std::unique_ptr<juce::FileOutputStream> fos(wavFile.createOutputStream());
+        REQUIRE(fos != nullptr);
+        std::unique_ptr<juce::AudioFormatWriter> writer(
+            wavFmt.createWriterFor(fos.get(), kSr, 1, 16, {}, 0));
+        REQUIRE(writer != nullptr);
+        fos.release(); // writer now owns stream
+        REQUIRE(writer->writeFromAudioSampleBuffer(audio, 0, kTotalSamples));
+    }
+
+    std::string err;
+    const auto decoded = TranscriptionService::decodeAudioFileTo16kMono(wavFile, err, 45.0);
+    REQUIRE(err.empty());
+    REQUIRE(decoded.size() == static_cast<size_t>(45 * kSr));
+
+    auto measureThird = [&](int thirdIdx) -> std::pair<double, double> {
+        const size_t start = static_cast<size_t>(thirdIdx) * (15u * kSr);
+        const size_t end = start + (15u * kSr);
+        double sq = 0.0;
+        int zc = 0;
+        for (size_t i = start + kSr; i < end - kSr; ++i) {
+            if ((decoded[i] >= 0.0f && decoded[i - 1] < 0.0f) ||
+                (decoded[i] < 0.0f && decoded[i - 1] >= 0.0f)) {
+                ++zc;
+            }
+        }
+        for (size_t i = start; i < end; ++i) {
+            sq += static_cast<double>(decoded[i]) * static_cast<double>(decoded[i]);
+        }
+        const double rms = std::sqrt(sq / static_cast<double>(end - start));
+        const double zcHz = (static_cast<double>(zc) * kSr) / (2.0 * static_cast<double>(13 * kSr));
+        return {rms, zcHz};
+    };
+
+    const auto [rmsIntro, hzIntro] = measureThird(0);
+    const auto [rmsChorus, hzChorus] = measureThird(1);
+    const auto [rmsOutro, hzOutro] = measureThird(2);
+
+    CHECK(rmsIntro > 0.2);
+    CHECK(rmsChorus > 0.3);
+    CHECK(rmsOutro > 0.2);
+    CHECK(hzIntro == Approx(220.0).margin(15.0));
+    CHECK(hzChorus == Approx(440.0).margin(15.0));
+    CHECK(hzOutro == Approx(660.0).margin(15.0));
+
+    tmpDir.deleteRecursively();
+}
