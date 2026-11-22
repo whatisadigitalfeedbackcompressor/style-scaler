@@ -1,18 +1,36 @@
 # StyleScaler — Server Upgrade & Execution Prompt
 
 > **How to use this prompt on the development server:**
-> Stop any old running job, run `git pull origin main`, inspect the current working tree for any local changes or generated presets you want to keep, and execute **Tasks 1 through 7** in order. Run all builds and tests locally and verify a green GitHub Actions **`Windows VST3 & CTest CI`** build after pushing.
+> Stop any old running job, run `git pull origin main`, and execute **Tasks 0 through 7** in order. Run **Task 0 (Pre-Flight Audit)** first so you preserve any presets, transcriptions, or code upgrades already completed on the server and skip redoing finished work. Run all builds and tests locally and verify a green GitHub Actions **`Windows VST3 & CTest CI`** build after pushing.
 
 ---
 
 ## Mission & Context
 
 Upgrade **StyleScaler** (`whatisadigitalfeedbackcompressor/style-scaler`) so that:
-1. **Windows CI builds cleanly** and produces downloadable `StyleScaler.vst3`, `StyleScaler.exe`, `style_cli.exe`, and `style_deconstruct.exe` artifacts.
-2. **Real commercial/user songs (`.mp3`, `.wav`, `.flac`, `.ogg`, `.aif`, `.mid`)** deconstruct accurately through `style_deconstruct.exe` and the in-plugin drop zone—with **`.mp3` decoding enabled**, **non-empty Melody extraction**, **beat-phase ($\phi_0$) downbeat alignment**, **HPSS drum-transient rejection**, **smart drop/chorus windowing**, **chord smoothing / top-$K$ pruning**, **a live terminal progress bar with ETA**, and **incremental `--merge-existing` corpus accumulation**.
-3. **Song Sections (`Intro / Chorus / Outro`)** are automatically extracted from full songs, preserved across incremental merges and cross-genre blends, and selectable in the Scaler-style UI.
-4. **Musical Generation & Starter Presets** produce non-deterministic branching chord progressions, true 1-to-1 voice leading without low-end mud, drift-free 4-bar melodic phrases, and genre-authentic bass articulation.
-5. **Scaler Performance UX** supports live **MIDI Bind** (`C2..D#3`), circular 30s DAW audio capture, DAW-synced `.mid` export BPM, and non-blocking DAW state recall.
+1. **Already-completed server work is audited, preserved, and resumed safely** (never overwritten or duplicated).
+2. **Windows CI builds cleanly** and produces downloadable `StyleScaler.vst3`, `StyleScaler.exe`, `style_cli.exe`, and `style_deconstruct.exe` artifacts.
+3. **Real commercial/user songs (`.mp3`, `.wav`, `.flac`, `.ogg`, `.aif`, `.mid`)** deconstruct accurately through `style_deconstruct.exe` and the in-plugin drop zone—with **`.mp3` decoding enabled**, **non-empty Melody extraction**, **beat-phase ($\phi_0$) downbeat alignment**, **HPSS drum-transient rejection**, **smart drop/chorus windowing**, **chord smoothing / top-$K$ pruning**, **a live terminal progress bar with ETA**, **per-song checkpoint caching / Ctrl+C resume**, and **incremental `--merge-existing` corpus accumulation**.
+4. **Song Sections (`Intro / Chorus / Outro`)** are automatically extracted from full songs, preserved across incremental merges and cross-genre blends, and selectable in the Scaler-style UI.
+5. **Musical Generation & Starter Presets** produce non-deterministic branching chord progressions, true 1-to-1 voice leading without low-end mud, drift-free 4-bar melodic phrases, and genre-authentic bass articulation.
+6. **Scaler Performance UX** supports live **MIDI Bind** (`C2..D#3`), circular 30s DAW audio capture, DAW-synced `.mid` export BPM, and non-blocking DAW state recall.
+
+---
+
+## Task 0 — Pre-Flight Audit & Preservation of Already-Completed Server Work
+
+**Run this BEFORE modifying any files, running `build_starter_presets.py`, or rebuilding:**
+
+1. **Inspect current server state:**
+   - Run `git status`, `git diff`, and `git log -n 5` to see if any Tasks 1–6 edits are already implemented locally or committed on the server.
+   - Check running processes (`style_deconstruct`, `cmake`, `python`) and inspect `presets/styles/*.json`, `presets/catalog.json`, `build/`, `dist/`, and any output or `--save-midi-dir` directories on disk.
+2. **Back up real song deconstructions & transcriptions:**
+   - Before touching `presets/styles/` or running `build_starter_presets.py`, copy any existing deconstructed `.json` profiles (especially any non-starter genre `.json` files or profiles with `source` containing `offline_` / `MuScriptor` / `Spectral` or modified timestamps newer than `HEAD`) and any saved `.mid` files into a safe backup directory outside `presets/` (e.g., `.server_backup/presets/`).
+   - **Never overwrite real song-deconstructed profiles** when running `build_starter_presets.py`: only refresh pure synthetic starter presets that haven't been replaced by real song deconstructions (or merge them deliberately if requested).
+3. **Skip completed tasks & reuse build caches:**
+   - Audit each sub-item in **Tasks 1 through 6** against the current files on the server. If a task or feature is already implemented and verified by tests, **skip re-implementing it**.
+   - Reuse the existing `build/` CMake cache and FetchContent `_deps/` (JUCE, `muscriptor.cpp`, `ggml`, Catch2, `nlohmann_json`) rather than deleting `build/` and rebuilding from scratch.
+   - Once Task 2C (`--cache-dir` + `processed_tracks`) is compiled, backfill/seed `.deconstruct_cache/` or `processed_tracks` from any `.mid` / `.json` outputs found during the audit so re-running `style_deconstruct.exe` on the user's song folders skips already-processed tracks cleanly.
 
 ---
 
@@ -74,6 +92,20 @@ Upgrade **StyleScaler** (`whatisadigitalfeedbackcompressor/style-scaler`) so tha
        - `sections` (`"intro"`, `"chorus"`, `"outro"` `SectionDNA` merged with the same `track_count` weights)
      - Set `out.track_count = existing.track_count + incoming.track_count;` and call `normalizeProfileDistributions(out)`.
   4. Add `--merge-existing` (default **enabled** in `auto-genre` and `per-folder` modes) and `--no-merge` (force overwrite) flags to `cli/deconstruct_main.cpp` and `tools/offline_analyzer/deconstruct_and_publish.py`. When merging is enabled and `destJson` already exists on disk, load the existing `StyleProfile`, merge the newly analyzed batch profile into it, then write `destJson` and rebuild `catalog.json`.
+
+### 2C. Per-Song Checkpoint Cache, Incremental Flush, Deduplication & Ctrl+C Handler
+- **Problem:** Currently `style_deconstruct.exe` keeps all transcribed songs in RAM (`pool.songs`) and only writes `.json` files at the very end of the batch—so stopping mid-run loses all work and re-running re-transcribes already-completed tracks (or double-counts them on `--merge-existing`).
+- **Required Change (`cli/deconstruct_main.cpp`, `StyleProfile.h/.cpp`):**
+  1. **Per-Song Transcription Cache (`--cache-dir`, default `.deconstruct_cache/`):**
+     - Compute a deterministic fingerprint per input audio/MIDI file (`sha256` of file contents or `size + mtime + path_stem` + backend/max_seconds).
+     - Immediately after `deconstructFileBlocking()` finishes a song, serialize its `DeconstructedSong` (`SongInput` notes, `bpm`, `time_sig_num/den`, `SongMetadata`, `backend_name`, and fingerprint) to `<cache_dir>/<fingerprint>.json`.
+     - Before transcribing any file, check if `<cache_dir>/<fingerprint>.json` exists and is valid; if so, load it in `< 1 ms`, print `[CACHED]` on the track summary line, and skip re-running `MuScriptor` / spectral analysis (unless `--no-cache` is passed).
+  2. **Track Deduplication Ledger (`processed_tracks` in `StyleProfile`):**
+     - Add `std::vector<std::string> processed_tracks;` to `StyleProfile` (`StyleProfile.h` / `StyleProfile.cpp`, optional JSON array, merged as a deduplicated union in `mergeProfiles()`).
+     - When `--merge-existing` is active and a file's fingerprint/track ID is already listed in the target profile's `processed_tracks`, print `[SKIP - already in profile]` in `< 1 ms` and skip both transcription and merging so tracks are never double-counted across resumed or repeated runs.
+  3. **Incremental Flush After Every Completed Song + Graceful `SIGINT` (Ctrl+C) Handler:**
+     - In `auto-genre`, `per-folder`, and `per-song` modes, incrementally update/flush the target `<genre>.json` (and `catalog.json` if `--catalog` is set) **after every newly completed track** instead of waiting for the entire directory to finish.
+     - Register a `std::signal(SIGINT, ...)` handler that sets an atomic `g_stopRequested` flag (also wired into `should_cancel` / `onProgress`), cleanly finishes flushing the last completed song's `.json` + `catalog.json`, and prints a clear resume summary (`Completed N tracks, remaining tracks can be resumed by re-running the same command`).
 
 ---
 
@@ -181,7 +213,7 @@ Upgrade **StyleScaler** (`whatisadigitalfeedbackcompressor/style-scaler`) so tha
 1. **Fix Over-Collapsed Starter Preset Markov Matrices:**
    - Expand `tools/offline_analyzer/build_starter_presets.py` from 2 rigid 4-chord cycles per genre to **6–8 varied progressions and rhythmic grooves per genre**, and add **2 new crossover presets** (`neo_soul.json` and `melodic_house.json`).
    - Adjust Dirichlet transition smoothing in `analyze_styles.py` / `build_starter_presets.py` so top transitions fall in a healthy musical range (`35%–55%` primary, `15%–25%` secondary choices) and rhythm onset grids have nuanced velocity/probability gradients instead of `0.0 / 1.0`.
-   - Rebuild all `presets/styles/*.json` and `presets/catalog.json`.
+   - Rebuild starter presets and `presets/catalog.json`, then restore/keep any real song-deconstructed `.json` profiles backed up in Task 0 (never overwrite real user-song profiles with synthetic starters).
 2. **True Bijective 1-to-1 Voice Leading & Low-Interval Mud Guard (`VoicingEngine::voiceChord`):**
    - Replace the one-way minimum loop in `computeVoiceLeadingDistance(a, b)` with sorted 1-to-1 voice mapping:
      $$d(a, b) = \frac{1}{M} \sum_{k=0}^{M-1} \left| a_{\lfloor k \cdot |a| / M \rfloor} - b_{\lfloor k \cdot |b| / M \rfloor} \right|$$
@@ -210,15 +242,16 @@ Upgrade **StyleScaler** (`whatisadigitalfeedbackcompressor/style-scaler`) so tha
 
 ## Task 7 — Verification Suite & GitHub CI Check
 
-1. Regenerate starter presets and catalog:
+1. Regenerate starter presets (preserving/restoring any real song-deconstructed profiles from Task 0) and rebuild catalog:
    ```powershell
    python tools/offline_analyzer/build_starter_presets.py
+   # Restore any real song-deconstructed profiles backed up in Task 0 before updating catalog:
    python tools/offline_analyzer/build_catalog.py
    ```
 2. Add comprehensive tests in `tests/core_tests.cpp` and `tests/plugin_tests.cpp` verifying:
    - Audio-transcribed single-channel/multi-program `TimedNoteSec` input produces **non-empty `melody` events** and distinct `Intro`, `Chorus`, `Outro` `SectionDNA` profiles.
    - Beat-phase offset $\phi_0$ recovery on time-shifted songs (e.g., `+0.31s` silence pre-roll aligns Bar 1 Beat 1 back to grid step 0).
-   - Incremental merging (`MidiStyleAnalyzer::mergeProfiles`) preserves weighted transitions and increments `track_count`.
+   - Incremental merging (`MidiStyleAnalyzer::mergeProfiles`) preserves weighted transitions, increments `track_count`, and deduplicates `processed_tracks`.
    - Every bundled starter preset has non-degenerate Markov entropy (max single transition probability `< 0.70`).
    - Bijective voice leading avoids low-interval mud and 4-bar melody stays centered without pinning against `melLo`/`melHi`.
    - `AudioCaptureRingBuffer` circular wrap-around retains the newest 30s of samples cleanly.
@@ -229,5 +262,5 @@ Upgrade **StyleScaler** (`whatisadigitalfeedbackcompressor/style-scaler`) so tha
    cmake --build build --config Release --target style_core style_cli style_deconstruct style_tests style_plugin_tests StyleScaler_VST3 StyleScaler_Standalone --parallel
    ctest --test-dir build -C Release --output-on-failure
    ```
-4. Test `style_deconstruct.exe` with the live progress bar and `--mode auto-genre --merge-existing` on sample `.mp3`/`.wav`/`.mid` inputs.
+4. Test `style_deconstruct.exe` with the live progress bar, per-song checkpoint cache (`--cache-dir`), and `--mode auto-genre --merge-existing` on sample `.mp3`/`.wav`/`.mid` inputs (and verify re-running skips cached/completed songs cleanly).
 5. Delete `UPGRADE_PROMPT.md` once all tasks are complete (or mark completed), commit cleanly, push to `origin main`, and confirm the GitHub Actions **`Windows VST3 & CTest CI`** run passes **green (`success`)** with all artifacts uploaded (`StyleScaler.vst3`, `StyleScaler.exe`, `style_cli.exe`, `style_deconstruct.exe`).
