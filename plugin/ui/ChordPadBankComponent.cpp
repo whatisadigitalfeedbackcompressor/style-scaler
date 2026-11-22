@@ -46,18 +46,18 @@ void ChordPadBankComponent::ChordPadButton::paint(juce::Graphics& g) {
     g.setColour(Theme::bgElevated);
     g.fillRoundedRectangle(addRect, 3.0f);
     g.setColour(Theme::textMuted);
-    g.setFont(juce::Font(juce::FontOptions(11.5f, juce::Font::bold)));
+    g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
     g.drawText("+", addRect.toNearestInt(), juce::Justification::centred);
 
     // Concrete chord name
     g.setColour(Theme::textPrimary);
-    g.setFont(juce::Font(juce::FontOptions(14.5f, juce::Font::bold)));
+    g.setFont(juce::Font(juce::FontOptions(16.0f, juce::Font::bold)));
     g.drawText(concrete_name, b.getX() + 6.0f, b.getY() + 6.0f, b.getWidth() - 26.0f, 20.0f,
                juce::Justification::centredLeft, true);
 
     // Roman numeral + probability %
     g.setColour(in_vocabulary ? Theme::slotACyan : Theme::textMuted);
-    g.setFont(juce::Font(juce::FontOptions(11.0f)));
+    g.setFont(juce::Font(juce::FontOptions(12.5f)));
     g.drawText(roman_symbol, b.getX() + 6.0f, b.getY() + 26.0f, b.getWidth() * 0.55f, 16.0f,
                juce::Justification::centredLeft, true);
 
@@ -117,11 +117,11 @@ ChordPadBankComponent::ChordPadBankComponent(StyleScalerAudioProcessor& processo
     addAndMakeVisible(header_lbl_);
     header_lbl_.setText("PLAYABLE CHORD PAD BANK  (Click to audition, '+' or drag to timeline)",
                         juce::dontSendNotification);
-    header_lbl_.setFont(juce::Font(juce::FontOptions(11.5f, juce::Font::bold)));
+    header_lbl_.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
     header_lbl_.setColour(juce::Label::textColourId, Theme::textPrimary);
 
     addAndMakeVisible(anchor_lbl_);
-    anchor_lbl_.setFont(juce::Font(juce::FontOptions(11.5f)));
+    anchor_lbl_.setFont(juce::Font(juce::FontOptions(13.0f)));
     anchor_lbl_.setJustificationType(juce::Justification::centredRight);
     anchor_lbl_.setColour(juce::Label::textColourId, Theme::probEmerald);
 

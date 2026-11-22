@@ -61,6 +61,12 @@ public:
                           float rotaryEndAngle,
                           juce::Slider& slider) override;
 
+    void drawCornerResizer(juce::Graphics& g,
+                           int w,
+                           int h,
+                           bool isMouseOver,
+                           bool isMouseDragging) override;
+
     juce::Font getTextButtonFont(juce::TextButton&, int buttonHeight) override;
     juce::Font getComboBoxFont(juce::ComboBox&) override;
 };

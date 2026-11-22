@@ -95,7 +95,7 @@ void PerformAndKeyboardBar::CustomPianoKeyboard::paint(juce::Graphics& g) {
 
         if (k.midi % 12 == 0) {
             g.setColour(Theme::bgMain.withAlpha(0.7f));
-            g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
+            g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
             g.drawText("C" + juce::String(k.midi / 12 - 1),
                        k.rect.withTop(k.rect.getBottom() - 16.0f).toNearestInt(),
                        juce::Justification::centred);
@@ -126,8 +126,8 @@ void PerformAndKeyboardBar::CustomPianoKeyboard::paint(juce::Graphics& g) {
     if (floorLineX >= 0.0f) {
         g.setColour(Theme::slotBViolet.withAlpha(0.85f));
         g.drawVerticalLine(static_cast<int>(std::llround(floorLineX)), 0.0f, static_cast<float>(getHeight()));
-        g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
-        g.drawText("Sub Floor", static_cast<int>(floorLineX) + 3, 2, 62, 13, juce::Justification::centredLeft);
+        g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+        g.drawText("Sub Floor", static_cast<int>(floorLineX) + 3, 2, 68, 14, juce::Justification::centredLeft);
     }
 }
 
@@ -199,7 +199,7 @@ void PerformAndKeyboardBar::MidiDragChip::paint(juce::Graphics& g) {
     g.drawRoundedRectangle(b, 5.0f, 1.2f);
 
     g.setColour(Theme::textPrimary);
-    g.setFont(juce::Font(juce::FontOptions(11.5f, juce::Font::bold)));
+    g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
     g.drawText(label_, getLocalBounds(), juce::Justification::centred);
 }
 
@@ -262,7 +262,7 @@ PerformAndKeyboardBar::PerformAndKeyboardBar(StyleScalerAudioProcessor& processo
         addAndMakeVisible(kb.slider);
 
         kb.label.setText(title, juce::dontSendNotification);
-        kb.label.setFont(juce::Font(juce::FontOptions(10.0f)));
+        kb.label.setFont(juce::Font(juce::FontOptions(11.5f)));
         kb.label.setJustificationType(juce::Justification::centred);
         kb.label.setColour(juce::Label::textColourId, Theme::textMuted);
         addAndMakeVisible(kb.label);
@@ -292,7 +292,7 @@ PerformAndKeyboardBar::PerformAndKeyboardBar(StyleScalerAudioProcessor& processo
 
     addAndMakeVisible(export_lbl_);
     export_lbl_.setText("DRAG MIDI TO DAW:", juce::dontSendNotification);
-    export_lbl_.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+    export_lbl_.setFont(juce::Font(juce::FontOptions(12.5f, juce::Font::bold)));
     export_lbl_.setColour(juce::Label::textColourId, Theme::textMuted);
 
     addAndMakeVisible(drag_chords_);

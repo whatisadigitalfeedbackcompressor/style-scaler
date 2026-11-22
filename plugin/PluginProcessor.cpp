@@ -710,6 +710,8 @@ void StyleScalerAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
     rootXml->setAttribute("slot_b_json", juce::String(toJson(slot_b_).dump()));
     rootXml->setAttribute("seed", juce::String(std::to_string(seed_)));
     rootXml->setAttribute("seed_locked", seed_locked_);
+    rootXml->setAttribute("editor_width", editor_width_.load(std::memory_order_relaxed));
+    rootXml->setAttribute("editor_height", editor_height_.load(std::memory_order_relaxed));
 
     nlohmann::json progArr = nlohmann::json::array();
     for (const auto& s : progression_) {
@@ -756,6 +758,8 @@ void StyleScalerAudioProcessor::setStateInformation(const void* data, int sizeIn
             } catch (...) {}
         }
         seed_locked_ = rootXml->getBoolAttribute("seed_locked", false);
+        setEditorSize(rootXml->getIntAttribute("editor_width", 580),
+                      rootXml->getIntAttribute("editor_height", 380));
 
         const auto pStr = rootXml->getStringAttribute("progression_json").toStdString();
         if (!pStr.empty()) {

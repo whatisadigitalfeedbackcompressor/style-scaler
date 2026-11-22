@@ -55,7 +55,7 @@ void TimelineComponent::SlotCard::paint(juce::Graphics& g) {
 
     // Top row: Bar badge + Lock tag
     g.setColour(Theme::textMuted);
-    g.setFont(juce::Font(juce::FontOptions(10.5f, juce::Font::bold)));
+    g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
     const double beatInBar = std::fmod(slot.start_beat, 4.0);
     const juce::String barTag = beatInBar > 0.1
                                     ? ("B" + juce::String(slot.bar_index + 1) + ".3")
@@ -69,7 +69,7 @@ void TimelineComponent::SlotCard::paint(juce::Graphics& g) {
 
     // Concrete chord name
     g.setColour(Theme::textPrimary);
-    g.setFont(juce::Font(juce::FontOptions(15.5f, juce::Font::bold)));
+    g.setFont(juce::Font(juce::FontOptions(17.0f, juce::Font::bold)));
     g.drawText(concrete_name, b.getX() + 4.0f, b.getY() + 21.0f, b.getWidth() - 8.0f, 22.0f,
                juce::Justification::centred, true);
 
@@ -85,7 +85,7 @@ void TimelineComponent::SlotCard::paint(juce::Graphics& g) {
     }
 
     g.setColour(Theme::slotACyan);
-    g.setFont(juce::Font(juce::FontOptions(11.0f)));
+    g.setFont(juce::Font(juce::FontOptions(12.5f)));
     g.drawText(subLine, b.getX() + 4.0f, b.getY() + 44.0f, b.getWidth() - 8.0f, 16.0f,
                juce::Justification::centred, true);
 }
@@ -207,11 +207,11 @@ TimelineComponent::TimelineComponent(StyleScalerAudioProcessor& processor)
     : processor_(processor) {
     addAndMakeVisible(header_lbl_);
     header_lbl_.setText("PROGRESSION TIMELINE", juce::dontSendNotification);
-    header_lbl_.setFont(juce::Font(juce::FontOptions(11.5f, juce::Font::bold)));
+    header_lbl_.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
     header_lbl_.setColour(juce::Label::textColourId, Theme::textPrimary);
 
     addAndMakeVisible(playhead_lbl_);
-    playhead_lbl_.setFont(juce::Font(juce::FontOptions(11.5f)));
+    playhead_lbl_.setFont(juce::Font(juce::FontOptions(13.0f)));
     playhead_lbl_.setColour(juce::Label::textColourId, Theme::slotACyan);
 
     auto setupBarsBtn = [&](juce::TextButton& btn, int choiceIdx) {

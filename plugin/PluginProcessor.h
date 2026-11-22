@@ -149,6 +149,14 @@ public:
     bool exportMidiToFile(const juce::File& destFile, int channelFilter, std::string& outError) const;
     juce::File exportTempMidiForDrag(int channelFilter) const;
 
+    // --- Persisted UI Window Size ---
+    int getEditorWidth() const noexcept { return editor_width_.load(std::memory_order_relaxed); }
+    int getEditorHeight() const noexcept { return editor_height_.load(std::memory_order_relaxed); }
+    void setEditorSize(int w, int h) noexcept {
+        editor_width_.store(std::clamp(w, 460, 1920), std::memory_order_relaxed);
+        editor_height_.store(std::clamp(h, 300, 1260), std::memory_order_relaxed);
+    }
+
     std::function<void()> onStateChangedForUI;
 
 private:
@@ -201,6 +209,9 @@ private:
 
     mutable std::mutex status_mutex_;
     TranscriptionStatus tx_status_;
+
+    std::atomic<int> editor_width_{580};
+    std::atomic<int> editor_height_{380};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(StyleScalerAudioProcessor)
 };

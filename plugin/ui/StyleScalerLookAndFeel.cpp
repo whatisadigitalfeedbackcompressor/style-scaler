@@ -23,11 +23,25 @@ StyleScalerLookAndFeel::StyleScalerLookAndFeel() {
 }
 
 juce::Font StyleScalerLookAndFeel::getTextButtonFont(juce::TextButton&, int buttonHeight) {
-    return juce::Font(juce::FontOptions(std::clamp(static_cast<float>(buttonHeight) * 0.46f, 10.5f, 14.0f)));
+    return juce::Font(juce::FontOptions(std::clamp(static_cast<float>(buttonHeight) * 0.50f, 11.5f, 15.0f)));
 }
 
 juce::Font StyleScalerLookAndFeel::getComboBoxFont(juce::ComboBox&) {
-    return juce::Font(juce::FontOptions(12.5f));
+    return juce::Font(juce::FontOptions(13.5f));
+}
+
+void StyleScalerLookAndFeel::drawCornerResizer(juce::Graphics& g,
+                                               int w,
+                                               int h,
+                                               bool isMouseOver,
+                                               bool isMouseDragging) {
+    const auto col = (isMouseDragging || isMouseOver) ? Theme::slotACyan : Theme::borderBright;
+    g.setColour(col);
+    const float fw = static_cast<float>(w);
+    const float fh = static_cast<float>(h);
+    for (float offset : {4.0f, 8.0f, 12.0f}) {
+        g.drawLine(fw - offset, fh - 1.5f, fw - 1.5f, fh - offset, 1.4f);
+    }
 }
 
 void StyleScalerLookAndFeel::drawButtonBackground(juce::Graphics& g,

@@ -272,12 +272,16 @@ TEST_CASE("StyleScalerAudioProcessor processBlock, state persistence, and MIDI e
     tmpMid.deleteFile();
 }
 
-TEST_CASE("StyleScalerAudioProcessorEditor headless creation, resize, and paint", "[editor]") {
+TEST_CASE("StyleScalerAudioProcessorEditor headless creation, half-size default, resize, and paint", "[editor]") {
     StyleScalerAudioProcessor proc;
     std::unique_ptr<juce::AudioProcessorEditor> editor(proc.createEditor());
     REQUIRE(editor != nullptr);
+    CHECK(editor->isResizable());
+    CHECK(editor->getWidth() == 580);
+    CHECK(editor->getHeight() == 380);
 
-    for (const auto& sz : std::array<std::pair<int, int>, 3>{{{960, 640}, {1160, 760}, {1440, 900}}}) {
+    for (const auto& sz : std::array<std::pair<int, int>, 5>{{
+             {460, 300}, {580, 380}, {900, 420}, {1160, 760}, {1440, 900}}}) {
         editor->setSize(sz.first, sz.second);
         juce::Image img(juce::Image::ARGB, sz.first, sz.second, true);
         juce::Graphics g(img);
@@ -285,6 +289,17 @@ TEST_CASE("StyleScalerAudioProcessorEditor headless creation, resize, and paint"
         CHECK(editor->getWidth() == sz.first);
         CHECK(editor->getHeight() == sz.second);
     }
+
+    // Verify resized editor dimensions persist in processor state
+    editor->setSize(740, 500);
+    juce::MemoryBlock stateBlob;
+    proc.getStateInformation(stateBlob);
+    StyleScalerAudioProcessor proc2;
+    proc2.setStateInformation(stateBlob.getData(), static_cast<int>(stateBlob.getSize()));
+    std::unique_ptr<juce::AudioProcessorEditor> editor2(proc2.createEditor());
+    REQUIRE(editor2 != nullptr);
+    CHECK(editor2->getWidth() == 740);
+    CHECK(editor2->getHeight() == 500);
 }
 
 int main(int argc, char* argv[]) {

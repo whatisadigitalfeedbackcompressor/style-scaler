@@ -56,10 +56,10 @@ TopDetectDnaPanel::TopDetectDnaPanel(StyleScalerAudioProcessor& processor)
     load_gguf_btn_.onClick = [this]() { handleLoadCustomGguf(); };
 
     addAndMakeVisible(model_badge_lbl_);
-    model_badge_lbl_.setFont(juce::Font(juce::FontOptions(11.5f, juce::Font::bold)));
+    model_badge_lbl_.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
 
     addAndMakeVisible(status_lbl_);
-    status_lbl_.setFont(juce::Font(juce::FontOptions(11.0f)));
+    status_lbl_.setFont(juce::Font(juce::FontOptions(12.5f)));
     status_lbl_.setColour(juce::Label::textColourId, Theme::textMuted);
 
     // Center: Slot A <-> Slot B + 4 Axis Blend Sliders
@@ -86,7 +86,7 @@ TopDetectDnaPanel::TopDetectDnaPanel(StyleScalerAudioProcessor& processor)
 
     auto initAxisRow = [&](AxisSliderRow& row, const char* titleText, const char* paramId) {
         row.title.setText(titleText, juce::dontSendNotification);
-        row.title.setFont(juce::Font(juce::FontOptions(12.0f)));
+        row.title.setFont(juce::Font(juce::FontOptions(13.0f)));
         row.title.setColour(juce::Label::textColourId, Theme::textPrimary);
         addAndMakeVisible(row.title);
 
@@ -100,7 +100,7 @@ TopDetectDnaPanel::TopDetectDnaPanel(StyleScalerAudioProcessor& processor)
         };
         addAndMakeVisible(row.slider);
 
-        row.readout.setFont(juce::Font(juce::FontOptions(11.0f)));
+        row.readout.setFont(juce::Font(juce::FontOptions(12.5f)));
         row.readout.setJustificationType(juce::Justification::centredRight);
         row.readout.setColour(juce::Label::textColourId, Theme::textMuted);
         addAndMakeVisible(row.readout);
@@ -144,11 +144,11 @@ TopDetectDnaPanel::TopDetectDnaPanel(StyleScalerAudioProcessor& processor)
     };
 
     addAndMakeVisible(key_info_lbl_);
-    key_info_lbl_.setFont(juce::Font(juce::FontOptions(11.5f)));
+    key_info_lbl_.setFont(juce::Font(juce::FontOptions(13.0f)));
     key_info_lbl_.setColour(juce::Label::textColourId, Theme::slotACyan);
 
     addAndMakeVisible(seed_lbl_);
-    seed_lbl_.setFont(juce::Font(juce::FontOptions(11.0f)));
+    seed_lbl_.setFont(juce::Font(juce::FontOptions(12.5f)));
     seed_lbl_.setColour(juce::Label::textColourId, Theme::textMuted);
 
     populatePresetCombos();
@@ -256,7 +256,7 @@ void TopDetectDnaPanel::paint(juce::Graphics& g) {
         g.drawRoundedRectangle(r.toFloat(), 8.0f, 1.0f);
 
         g.setColour(accent);
-        g.setFont(juce::Font(juce::FontOptions(11.5f, juce::Font::bold)));
+        g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
         g.drawText(title, r.getX() + 10, r.getY() + 6, r.getWidth() - 20, 18, juce::Justification::centredLeft);
     };
 
@@ -278,7 +278,7 @@ void TopDetectDnaPanel::paint(juce::Graphics& g) {
         g.strokePath(p, stroke);
 
         g.setColour(drag_hover_ ? Theme::textPrimary : Theme::textMuted);
-        g.setFont(juce::Font(juce::FontOptions(11.5f)));
+        g.setFont(juce::Font(juce::FontOptions(13.0f)));
         g.drawText("Drop Audio or MIDI File", drop_zone_rect_.withTrimmedRight(112), juce::Justification::centred);
     }
 
