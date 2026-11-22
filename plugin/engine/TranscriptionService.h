@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/ModelManager.h"
+#include "style_scaler/AudioMetadata.h"
 #include "style_scaler/MidiStyleAnalyzer.h"
 #include "style_scaler/StyleProfile.h"
 #include "style_scaler/Types.h"
@@ -39,6 +40,7 @@ public:
         std::string backend_name;
         std::string error;
         StyleProfile profile;
+        SongMetadata metadata;
         size_t num_notes = 0;
     };
 
@@ -47,6 +49,7 @@ public:
         std::string backend_name;
         std::string error;
         SongInput song_input;
+        SongMetadata metadata;
         std::vector<TimedNoteSec> timed_notes;
     };
 

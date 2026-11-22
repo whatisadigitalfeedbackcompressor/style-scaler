@@ -14,6 +14,10 @@ struct AnalysisOptions {
     std::string name = "Analyzed Style";
     std::string genre = "Analyzed";
     std::string source = "in_plugin_analysis";
+    std::vector<std::string> tags;
+    std::string genre_source;
+    std::string artist;
+    std::string album;
     double bpm_hint = 0.0;                  // <= 0 triggers automatic tempo estimation
     int time_sig_num = 4;
     int time_sig_den = 4;

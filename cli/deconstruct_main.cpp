@@ -1,6 +1,7 @@
 #include "engine/ModelManager.h"
 #include "engine/TranscriptionService.h"
 
+#include "style_scaler/AudioMetadata.h"
 #include "style_scaler/MidiStyleAnalyzer.h"
 #include "style_scaler/SmfIO.h"
 #include "style_scaler/StyleProfile.h"
@@ -31,7 +32,8 @@ namespace {
 enum class BatchMode {
     Corpus,
     PerFolder,
-    PerSong
+    PerSong,
+    AutoGenre
 };
 
 void printUsage() {
@@ -41,12 +43,13 @@ void printUsage() {
         "  style_deconstruct --input <file_or_dir> [--out <profile.json> | --out-dir <dir>] [options]\n\n"
         "Options:\n"
         "  --input <path>          Input audio/MIDI file or directory (repeatable)\n"
-        "  --mode <mode>           corpus | per-folder | per-song (default: corpus for --out, per-folder for --out-dir)\n"
+        "  --mode <mode>           corpus | per-folder | per-song | auto-genre\n"
+        "                          (default: corpus for --out, per-folder for --out-dir)\n"
         "  --out <file.json>       Single StyleProfile JSON output (corpus mode)\n"
         "  --out-dir <dir>         Directory to write one or more StyleProfile JSONs\n"
         "  --id <id>               Profile ID (corpus mode)\n"
         "  --name <name>           Display name (corpus mode)\n"
-        "  --genre <genre>         Genre tag\n"
+        "  --genre <genre>         Explicit genre override\n"
         "  --description <text>    Profile description\n"
         "  --model <path.gguf>     Path to MuScriptor GGUF checkpoint\n"
         "  --download-model        Download & verify muscriptor-small-f16.gguf (~209 MB) first\n"
@@ -66,7 +69,8 @@ bool isSupportedMediaFile(const fs::path& p) {
     std::transform(ext.begin(), ext.end(), ext.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return ext == ".wav" || ext == ".aif" || ext == ".aiff" ||
-           ext == ".flac" || ext == ".ogg" || ext == ".mp3" ||
+           ext == ".flac" || ext == ".ogg" || ext == ".opus" ||
+           ext == ".mp3" || ext == ".m4a" || ext == ".aac" ||
            ext == ".mid" || ext == ".midi";
 }
 
@@ -128,10 +132,12 @@ bool writeCatalogFromDir(const fs::path& stylesDir, const fs::path& catalogPath)
     std::sort(jsonFiles.begin(), jsonFiles.end());
 
     nlohmann::json presetsArr = nlohmann::json::array();
+    std::map<std::string, std::vector<std::string>> genresMap;
     const fs::path catParent = catalogPath.has_parent_path() ? catalogPath.parent_path() : fs::current_path();
     const std::string stamp = currentIsoUtc();
 
     for (const auto& jf : jsonFiles) {
+        if (jf.filename() == "catalog.json") continue;
         auto prof = loadFromFile(jf);
         if (!prof) continue;
 
@@ -142,7 +148,7 @@ bool writeCatalogFromDir(const fs::path& stylesDir, const fs::path& catalogPath)
         fs::path rel = fs::relative(jf, catParent, ec);
         std::string relStr = (ec ? jf.filename().string() : rel.generic_string());
 
-        presetsArr.push_back({
+        nlohmann::json item = {
             {"id", prof->id},
             {"name", prof->name},
             {"genre", prof->genre},
@@ -155,13 +161,25 @@ bool writeCatalogFromDir(const fs::path& stylesDir, const fs::path& catalogPath)
             {"mode", std::string(modeName(prof->harmony.mode))},
             {"tonic_pc", prof->harmony.tonic_pc},
             {"updated_at", stamp}
-        });
+        };
+        if (!prof->tags.empty()) item["tags"] = prof->tags;
+        if (!prof->genre_source.empty()) item["genre_source"] = prof->genre_source;
+        if (!prof->artist.empty()) item["artist"] = prof->artist;
+        presetsArr.push_back(std::move(item));
+
+        const std::string gKey = prof->genre.empty() ? "Uncategorized" : prof->genre;
+        genresMap[gKey].push_back(prof->id);
+    }
+
+    for (auto& [_, ids] : genresMap) {
+        std::sort(ids.begin(), ids.end());
     }
 
     nlohmann::json catalog = {
         {"schema_version", 1},
         {"catalog_name", "StyleScaler Preset Catalog"},
         {"updated_at", stamp},
+        {"genres", genresMap},
         {"presets", presetsArr}
     };
 
@@ -224,6 +242,7 @@ int main(int argc, char* argv[]) {
             if (m == "corpus") explicitMode = BatchMode::Corpus;
             else if (m == "per-folder") explicitMode = BatchMode::PerFolder;
             else if (m == "per-song") explicitMode = BatchMode::PerSong;
+            else if (m == "auto-genre") explicitMode = BatchMode::AutoGenre;
             else {
                 std::cerr << "Invalid --mode: " << m << "\n";
                 return 2;
@@ -321,6 +340,7 @@ int main(int argc, char* argv[]) {
         std::string id;
         std::string name;
         std::string genre;
+        bool explicit_genre = false;
         fs::path destJson;
         std::vector<fs::path> files;
     };
@@ -337,6 +357,187 @@ int main(int argc, char* argv[]) {
         return found;
     };
 
+    auto finalizeAndWriteProfile = [&](const fs::path& destJson,
+                                       const std::vector<SongInput>& songs,
+                                       AnalysisOptions aopts,
+                                       int& okCount) {
+        StyleProfile prof = MidiStyleAnalyzer::analyzeCorpus(songs, aopts);
+        if (prof.genre.empty() || prof.genre == "Analyzed" || prof.genre == "Deconstructed" ||
+            prof.genre == "Deconstructed Song") {
+            prof.genre = AudioMetadataReader::inferGenreFromProfileHeuristic(prof);
+            if (prof.genre_source.empty() || prof.genre_source == "none") {
+                prof.genre_source = "heuristic";
+            }
+            std::string low = prof.genre;
+            std::transform(low.begin(), low.end(), low.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            if (std::find(prof.tags.begin(), prof.tags.end(), low) == prof.tags.end()) {
+                prof.tags.push_back(low);
+            }
+        }
+        if (!descArg.empty()) {
+            prof.description = descArg;
+        } else {
+            prof.description = "Offline deconstructed " + prof.genre + " from " +
+                               std::to_string(songs.size()) + " track(s) via " + aopts.source;
+            if (!prof.genre_source.empty()) {
+                prof.description += " [genre: " + prof.genre_source + "]";
+            }
+        }
+        if (clearanceOverride.has_value()) {
+            prof.voicing.sub_bass_clearance_midi = std::clamp(
+                *clearanceOverride, 36, std::min(60, prof.voicing.register_high - 6));
+            prof.voicing.register_low = std::max(prof.voicing.register_low, prof.voicing.sub_bass_clearance_midi);
+        }
+        normalizeProfileDistributions(prof);
+
+        if (auto saveRes = saveToFile(prof, destJson); !saveRes) {
+            std::cerr << "  Error writing " << destJson.string() << ": " << saveRes.error() << "\n";
+            return false;
+        }
+
+        std::cout << "  Wrote " << destJson.string()
+                  << " | Genre=" << prof.genre << " (" << (prof.genre_source.empty() ? "manual" : prof.genre_source) << ")"
+                  << " | Key=" << pitchClassName(prof.harmony.tonic_pc) << " " << modeName(prof.harmony.mode)
+                  << " | Vocab=" << prof.harmony.vocabulary.size()
+                  << " | Floor=" << prof.voicing.sub_bass_clearance_midi << "\n";
+        ++okCount;
+        return true;
+    };
+
+    TranscriptionService txService(modelManager);
+    TranscriptionService::DeconstructOptions dopts;
+    dopts.max_seconds = maxSeconds;
+    dopts.n_threads = threads;
+    dopts.bpm_hint = bpmHint;
+    dopts.force_spectral = forceSpectral;
+
+    int succeeded = 0;
+
+    if (mode == BatchMode::AutoGenre) {
+        const fs::path destRoot = outDir.value_or(fs::path("presets/styles"));
+        std::vector<fs::path> allFiles;
+        for (const auto& in : inputs) {
+            if (fs::is_directory(in)) {
+                auto sub = collectRecursive(in);
+                allFiles.insert(allFiles.end(), sub.begin(), sub.end());
+            } else if (fs::is_regular_file(in) && isSupportedMediaFile(in)) {
+                allFiles.push_back(in);
+            }
+        }
+        if (allFiles.empty()) {
+            std::cerr << "No supported audio/MIDI files found in inputs.\n";
+            return 1;
+        }
+
+        struct GenrePool {
+            std::string genre_name;
+            std::vector<SongInput> songs;
+            std::vector<std::string> tags;
+            std::map<std::string, int> source_counts;
+            std::map<std::string, int> artist_counts;
+            std::string last_backend;
+        };
+        std::map<std::string, GenrePool> pools;
+
+        std::cout << "=== Auto-Genre Deconstruction (" << allFiles.size() << " track(s)) ===\n";
+        for (const auto& f : allFiles) {
+            std::cout << "  -> " << f.filename().string() << " ... " << std::flush;
+            const auto ds = txService.deconstructFileBlocking(juce::File(f.string()), dopts);
+            if (!ds.success) {
+                std::cout << "SKIPPED (" << ds.error << ")\n";
+                continue;
+            }
+
+            if (saveMidiDir.has_value()) {
+                const fs::path midOut = *saveMidiDir / (sanitizeSlug(f.stem().string()) + ".mid");
+                (void)SmfWriter::writeType1(midOut, ds.song_input.bpm,
+                                            ds.song_input.time_sig_num, ds.song_input.time_sig_den,
+                                            ds.song_input.notes);
+            }
+
+            std::string detectedGenre = ds.metadata.canonical_genre;
+            std::string detectedSource = ds.metadata.genre_source;
+            if (!genreArg.empty() && detectedGenre.empty()) {
+                detectedGenre = AudioMetadataReader::canonicalizeGenre(genreArg);
+                detectedSource = "cli_fallback";
+            }
+            if (detectedGenre.empty()) {
+                AnalysisOptions tmpOpts;
+                const auto singleProf = MidiStyleAnalyzer::analyze(ds.song_input.notes, ds.song_input.bpm, tmpOpts);
+                detectedGenre = AudioMetadataReader::inferGenreFromProfileHeuristic(singleProf);
+                detectedSource = "heuristic";
+            }
+
+            const std::string slug = AudioMetadataReader::sanitizeGenreSlug(detectedGenre);
+            auto& pool = pools[slug];
+            if (pool.genre_name.empty()) pool.genre_name = detectedGenre;
+            pool.songs.push_back(ds.song_input);
+            pool.source_counts[detectedSource] += 1;
+            if (!ds.metadata.artist.empty()) pool.artist_counts[ds.metadata.artist] += 1;
+            pool.last_backend = ds.backend_name;
+
+            for (const auto& t : ds.metadata.tags) {
+                if (std::find(pool.tags.begin(), pool.tags.end(), t) == pool.tags.end()) {
+                    pool.tags.push_back(t);
+                }
+            }
+            std::string canonLow = detectedGenre;
+            std::transform(canonLow.begin(), canonLow.end(), canonLow.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            if (std::find(pool.tags.begin(), pool.tags.end(), canonLow) == pool.tags.end()) {
+                pool.tags.push_back(canonLow);
+            }
+
+            std::cout << ds.backend_name << " (" << ds.song_input.notes.size()
+                      << " notes @ " << std::fixed << std::setprecision(1) << ds.song_input.bpm
+                      << " BPM) -> [" << detectedGenre << " via " << detectedSource << "]\n";
+        }
+
+        for (const auto& [slug, pool] : pools) {
+            if (pool.songs.empty()) continue;
+            AnalysisOptions aopts;
+            aopts.id = slug;
+            aopts.name = pool.genre_name;
+            aopts.genre = pool.genre_name;
+            aopts.source = pool.last_backend.empty() ? "offline_deconstruct" : ("offline_" + pool.last_backend);
+            aopts.tags = pool.tags;
+            aopts.bpm_hint = bpmHint;
+            aopts.key_override_pc = keyOverride;
+            aopts.mode_override = modeOverride;
+
+            int bestSrcCount = -1;
+            for (const auto& [srcName, cnt] : pool.source_counts) {
+                if (cnt > bestSrcCount) {
+                    bestSrcCount = cnt;
+                    aopts.genre_source = srcName;
+                }
+            }
+            if (pool.artist_counts.size() == 1) {
+                aopts.artist = pool.artist_counts.begin()->first;
+            }
+
+            const fs::path destJson = destRoot / (slug + ".json");
+            std::cout << "=== Pooling Genre [" << pool.genre_name << "] (" << pool.songs.size() << " track(s)) ===\n";
+            finalizeAndWriteProfile(destJson, pool.songs, std::move(aopts), succeeded);
+        }
+
+        if (succeeded == 0) {
+            std::cerr << "No profiles were successfully created.\n";
+            return 1;
+        }
+
+        if (catalogPath.has_value()) {
+            if (writeCatalogFromDir(destRoot, *catalogPath)) {
+                std::cout << "Updated catalog: " << catalogPath->string() << "\n";
+            } else {
+                std::cerr << "Failed writing catalog: " << catalogPath->string() << "\n";
+                return 1;
+            }
+        }
+        return 0;
+    }
+
     if (mode == BatchMode::Corpus) {
         JobGroup g;
         std::vector<fs::path> allFiles;
@@ -351,7 +552,8 @@ int main(int argc, char* argv[]) {
         const std::string fallbackStem = inputs.front().stem().string();
         g.id = !idArg.empty() ? sanitizeSlug(idArg) : sanitizeSlug(fallbackStem);
         g.name = !nameArg.empty() ? nameArg : prettifyTitle(g.id);
-        g.genre = !genreArg.empty() ? genreArg : prettifyTitle(g.id);
+        g.genre = !genreArg.empty() ? AudioMetadataReader::canonicalizeGenre(genreArg) : "";
+        g.explicit_genre = !genreArg.empty();
         g.destJson = outFile.value_or(outDir.value_or(fs::path(".")) / (g.id + ".json"));
         g.files = std::move(allFiles);
         if (!g.files.empty()) jobs.push_back(std::move(g));
@@ -368,7 +570,8 @@ int main(int argc, char* argv[]) {
                             JobGroup g;
                             g.id = sanitizeSlug(e.path().filename().string());
                             g.name = prettifyTitle(g.id);
-                            g.genre = !genreArg.empty() ? genreArg : g.name;
+                            g.genre = !genreArg.empty() ? AudioMetadataReader::canonicalizeGenre(genreArg) : "";
+                            g.explicit_genre = !genreArg.empty();
                             g.destJson = destRoot / (g.id + ".json");
                             g.files = std::move(files);
                             jobs.push_back(std::move(g));
@@ -381,7 +584,8 @@ int main(int argc, char* argv[]) {
                         JobGroup g;
                         g.id = !idArg.empty() ? sanitizeSlug(idArg) : sanitizeSlug(in.filename().string());
                         g.name = !nameArg.empty() ? nameArg : prettifyTitle(g.id);
-                        g.genre = !genreArg.empty() ? genreArg : g.name;
+                        g.genre = !genreArg.empty() ? AudioMetadataReader::canonicalizeGenre(genreArg) : "";
+                        g.explicit_genre = !genreArg.empty();
                         g.destJson = destRoot / (g.id + ".json");
                         g.files = std::move(files);
                         jobs.push_back(std::move(g));
@@ -391,7 +595,8 @@ int main(int argc, char* argv[]) {
                 JobGroup g;
                 g.id = sanitizeSlug(in.stem().string());
                 g.name = prettifyTitle(g.id);
-                g.genre = !genreArg.empty() ? genreArg : "Deconstructed";
+                g.genre = !genreArg.empty() ? AudioMetadataReader::canonicalizeGenre(genreArg) : "";
+                g.explicit_genre = !genreArg.empty();
                 g.destJson = destRoot / (g.id + ".json");
                 g.files = {in};
                 jobs.push_back(std::move(g));
@@ -412,7 +617,8 @@ int main(int argc, char* argv[]) {
             JobGroup g;
             g.id = sanitizeSlug(f.stem().string());
             g.name = prettifyTitle(f.stem().string());
-            g.genre = !genreArg.empty() ? genreArg : "Deconstructed Song";
+            g.genre = !genreArg.empty() ? AudioMetadataReader::canonicalizeGenre(genreArg) : "";
+            g.explicit_genre = !genreArg.empty();
             g.destJson = destRoot / (g.id + ".json");
             g.files = {f};
             jobs.push_back(std::move(g));
@@ -424,18 +630,14 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    TranscriptionService txService(modelManager);
-    TranscriptionService::DeconstructOptions dopts;
-    dopts.max_seconds = maxSeconds;
-    dopts.n_threads = threads;
-    dopts.bpm_hint = bpmHint;
-    dopts.force_spectral = forceSpectral;
-
-    int succeeded = 0;
     for (const auto& job : jobs) {
         std::cout << "=== Deconstructing [" << job.id << "] (" << job.files.size() << " file(s)) ===\n";
         std::vector<SongInput> songs;
         std::string lastBackend;
+        std::map<std::string, int> genreCounts;
+        std::map<std::string, std::string> genreToSource;
+        std::vector<std::string> collectedTags;
+        std::string singleTitle, singleArtist, singleAlbum;
 
         for (const auto& f : job.files) {
             std::cout << "  -> " << f.filename().string() << " ... " << std::flush;
@@ -446,7 +648,24 @@ int main(int argc, char* argv[]) {
             }
             lastBackend = ds.backend_name;
             std::cout << ds.backend_name << " (" << ds.song_input.notes.size()
-                      << " notes @ " << std::fixed << std::setprecision(1) << ds.song_input.bpm << " BPM)\n";
+                      << " notes @ " << std::fixed << std::setprecision(1) << ds.song_input.bpm << " BPM)";
+            if (ds.metadata.hasGenre()) {
+                std::cout << " [" << ds.metadata.canonical_genre << " via " << ds.metadata.genre_source << "]";
+                genreCounts[ds.metadata.canonical_genre] += 1;
+                genreToSource[ds.metadata.canonical_genre] = ds.metadata.genre_source;
+            }
+            std::cout << "\n";
+
+            for (const auto& t : ds.metadata.tags) {
+                if (std::find(collectedTags.begin(), collectedTags.end(), t) == collectedTags.end()) {
+                    collectedTags.push_back(t);
+                }
+            }
+            if (songs.empty()) {
+                singleTitle = ds.metadata.title;
+                singleArtist = ds.metadata.artist;
+                singleAlbum = ds.metadata.album;
+            }
 
             if (saveMidiDir.has_value()) {
                 const fs::path midOut = *saveMidiDir / (sanitizeSlug(f.stem().string()) + ".mid");
@@ -462,39 +681,35 @@ int main(int argc, char* argv[]) {
             continue;
         }
 
+        std::string resolvedGenre = job.genre;
+        std::string resolvedGenreSource = job.explicit_genre ? "cli" : "";
+        if (!job.explicit_genre && !genreCounts.empty()) {
+            int bestCnt = -1;
+            for (const auto& [gName, cnt] : genreCounts) {
+                if (cnt > bestCnt) {
+                    bestCnt = cnt;
+                    resolvedGenre = gName;
+                    resolvedGenreSource = genreToSource[gName];
+                }
+            }
+        }
+
         AnalysisOptions aopts;
         aopts.id = job.id;
-        aopts.name = job.name;
-        aopts.genre = job.genre;
+        aopts.name = (job.files.size() == 1 && !singleTitle.empty() && nameArg.empty()) ? singleTitle : job.name;
+        aopts.genre = resolvedGenre;
         aopts.source = lastBackend.empty() ? "offline_deconstruct" : ("offline_" + lastBackend);
+        aopts.tags = std::move(collectedTags);
+        aopts.genre_source = resolvedGenreSource;
+        if (job.files.size() == 1) {
+            aopts.artist = singleArtist;
+            aopts.album = singleAlbum;
+        }
         aopts.bpm_hint = bpmHint;
         aopts.key_override_pc = keyOverride;
         aopts.mode_override = modeOverride;
 
-        StyleProfile prof = MidiStyleAnalyzer::analyzeCorpus(songs, aopts);
-        if (!descArg.empty()) {
-            prof.description = descArg;
-        } else {
-            prof.description = "Offline deconstructed from " + std::to_string(songs.size()) +
-                               " track(s) via " + aopts.source;
-        }
-        if (clearanceOverride.has_value()) {
-            prof.voicing.sub_bass_clearance_midi = std::clamp(
-                *clearanceOverride, 36, std::min(60, prof.voicing.register_high - 6));
-            prof.voicing.register_low = std::max(prof.voicing.register_low, prof.voicing.sub_bass_clearance_midi);
-        }
-        normalizeProfileDistributions(prof);
-
-        if (auto saveRes = saveToFile(prof, job.destJson); !saveRes) {
-            std::cerr << "  Error writing " << job.destJson.string() << ": " << saveRes.error() << "\n";
-            continue;
-        }
-
-        std::cout << "  Wrote " << job.destJson.string()
-                  << " | Key=" << pitchClassName(prof.harmony.tonic_pc) << " " << modeName(prof.harmony.mode)
-                  << " | Vocab=" << prof.harmony.vocabulary.size()
-                  << " | Floor=" << prof.voicing.sub_bass_clearance_midi << "\n";
-        ++succeeded;
+        finalizeAndWriteProfile(job.destJson, songs, std::move(aopts), succeeded);
     }
 
     if (succeeded == 0) {

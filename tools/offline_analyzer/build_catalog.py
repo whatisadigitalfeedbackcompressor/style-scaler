@@ -43,10 +43,11 @@ def build_catalog(styles_dir: Path, out_catalog: Path, catalog_name: str) -> Dic
     cat_parent = out_catalog.parent
 
     entries: List[Dict[str, Any]] = []
+    genres_map: Dict[str, List[str]] = {}
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     for json_path in sorted(styles_dir.glob("*.json")):
-        if json_path.resolve() == out_catalog:
+        if json_path.resolve() == out_catalog or json_path.name.lower() == "catalog.json":
             continue
         data = json.loads(json_path.read_text(encoding="utf-8"))
         missing = REQUIRED_TOP_KEYS - set(data.keys())
@@ -60,10 +61,12 @@ def build_catalog(styles_dir: Path, out_catalog: Path, catalog_name: str) -> Dic
         except ValueError:
             rel_file = json_path.name
 
-        entries.append({
-            "id": str(data["id"]),
+        genre_name = str(data["genre"]) or "Uncategorized"
+        preset_id = str(data["id"])
+        entry: Dict[str, Any] = {
+            "id": preset_id,
             "name": str(data["name"]),
-            "genre": str(data["genre"]),
+            "genre": genre_name,
             "description": str(data.get("description", "")),
             "file": rel_file,
             "sha256": sha256_file(json_path),
@@ -73,16 +76,29 @@ def build_catalog(styles_dir: Path, out_catalog: Path, catalog_name: str) -> Dic
             "mode": str(data["harmony"].get("mode", "minor")),
             "tonic_pc": int(data["harmony"].get("tonic_pc", 0)),
             "updated_at": stamp,
-        })
+        }
+        if isinstance(data.get("tags"), list) and data["tags"]:
+            entry["tags"] = [str(t) for t in data["tags"] if str(t)]
+        if data.get("genre_source"):
+            entry["genre_source"] = str(data["genre_source"])
+        if data.get("artist"):
+            entry["artist"] = str(data["artist"])
+        entries.append(entry)
+
+        genres_map.setdefault(genre_name, []).append(preset_id)
+
+    sorted_genres = {g: sorted(ids) for g, ids in sorted(genres_map.items(), key=lambda kv: kv[0].lower())}
 
     catalog = {
         "schema_version": 1,
         "catalog_name": catalog_name,
         "updated_at": stamp,
+        "genres": sorted_genres,
         "presets": entries,
     }
     out_catalog.parent.mkdir(parents=True, exist_ok=True)
-    out_catalog.write_text(json.dumps(catalog, indent=2) + "\n", encoding="utf-8")
+    with out_catalog.open("w", encoding="utf-8", newline="\n") as f:
+        f.write(json.dumps(catalog, indent=2) + "\n")
     return catalog
 
 

@@ -362,3 +362,108 @@ int main(int argc, char* argv[]) {
     juce::ScopedJuceInitialiser_GUI juceInit;
     return Catch::Session().run(argc, argv);
 }
+
+
+TEST_CASE("TranscriptionService detects WAV RIFF LIST/INFO metadata genre and StyleScalerAudioProcessor indexes genres", "[metadata][plugin]") {
+    juce::ScopedJuceInitialiser_GUI juceInit;
+
+    const juce::File tmpDir = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                                  .getChildFile("style_scaler_plugin_meta_test");
+    tmpDir.createDirectory();
+    const juce::File wavFile = tmpDir.getChildFile("ukg_chord_test.wav");
+
+    // Build 1.5s 16-bit mono 16kHz C-minor triad WAV + trailing RIFF LIST/INFO chunk (after 'data')
+    constexpr int sampleRate = 16000;
+    constexpr int numSamples = 24000;
+    std::vector<uint8_t> pcmBytes(static_cast<size_t>(numSamples) * 2u, 0);
+    for (int n = 0; n < numSamples; ++n) {
+        const double t = static_cast<double>(n) / sampleRate;
+        const double s = 0.25 * (std::sin(2.0 * 3.14159265 * 261.63 * t) +
+                                 std::sin(2.0 * 3.14159265 * 311.13 * t) +
+                                 std::sin(2.0 * 3.14159265 * 392.00 * t));
+        const int16_t v = static_cast<int16_t>(std::clamp(s, -0.95, 0.95) * 28000.0);
+        pcmBytes[static_cast<size_t>(n) * 2u] = static_cast<uint8_t>(v & 0xFF);
+        pcmBytes[static_cast<size_t>(n) * 2u + 1u] = static_cast<uint8_t>((v >> 8) & 0xFF);
+    }
+
+    auto appendU32 = [](std::vector<uint8_t>& b, uint32_t v) {
+        b.push_back(static_cast<uint8_t>(v & 0xFF));
+        b.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        b.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+        b.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+    };
+    auto appendU16 = [](std::vector<uint8_t>& b, uint16_t v) {
+        b.push_back(static_cast<uint8_t>(v & 0xFF));
+        b.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+    };
+    auto appendTag = [](std::vector<uint8_t>& b, const char* s) {
+        b.insert(b.end(), s, s + 4);
+    };
+    auto appendInfoItem = [&](std::vector<uint8_t>& dst, const char* id4, const std::string& val) {
+        appendTag(dst, id4);
+        const uint32_t sz = static_cast<uint32_t>(val.size() + 1u);
+        appendU32(dst, sz);
+        dst.insert(dst.end(), val.begin(), val.end());
+        dst.push_back(0);
+        if ((sz & 1u) != 0) dst.push_back(0);
+    };
+
+    std::vector<uint8_t> infoChunk;
+    appendTag(infoChunk, "INFO");
+    appendInfoItem(infoChunk, "IGNR", "UK Garage");
+    appendInfoItem(infoChunk, "INAM", "2Step Test");
+    appendInfoItem(infoChunk, "IART", "TestSynth");
+    appendInfoItem(infoChunk, "IBPM", "132");
+
+    std::vector<uint8_t> wav;
+    appendTag(wav, "RIFF");
+    appendU32(wav, 0); // patched below
+    appendTag(wav, "WAVE");
+
+    appendTag(wav, "fmt ");
+    appendU32(wav, 16);
+    appendU16(wav, 1);          // PCM
+    appendU16(wav, 1);          // mono
+    appendU32(wav, sampleRate);
+    appendU32(wav, sampleRate * 2);
+    appendU16(wav, 2);
+    appendU16(wav, 16);
+
+    appendTag(wav, "data");
+    appendU32(wav, static_cast<uint32_t>(pcmBytes.size()));
+    wav.insert(wav.end(), pcmBytes.begin(), pcmBytes.end());
+
+    appendTag(wav, "LIST");
+    appendU32(wav, static_cast<uint32_t>(infoChunk.size()));
+    wav.insert(wav.end(), infoChunk.begin(), infoChunk.end());
+
+    const uint32_t riffLen = static_cast<uint32_t>(wav.size() - 8u);
+    wav[4] = static_cast<uint8_t>(riffLen & 0xFF);
+    wav[5] = static_cast<uint8_t>((riffLen >> 8) & 0xFF);
+    wav[6] = static_cast<uint8_t>((riffLen >> 16) & 0xFF);
+    wav[7] = static_cast<uint8_t>((riffLen >> 24) & 0xFF);
+
+    REQUIRE(wavFile.replaceWithData(wav.data(), wav.size()));
+
+    ModelManager mm;
+    TranscriptionService tx(mm);
+    TranscriptionService::DeconstructOptions opts;
+    opts.force_spectral = true;
+    const auto ds = tx.deconstructFileBlocking(wavFile, opts);
+
+    REQUIRE(ds.success);
+    REQUIRE(ds.metadata.canonical_genre == "UK Garage");
+    REQUIRE(ds.metadata.genre_source == "riff_info");
+    REQUIRE(ds.metadata.artist == "TestSynth");
+    REQUIRE(ds.metadata.bpm == Approx(132.0));
+    REQUIRE(ds.song_input.bpm == Approx(132.0));
+
+    StyleScalerAudioProcessor proc;
+    const auto genres = proc.getAvailableGenres();
+    REQUIRE(std::find(genres.begin(), genres.end(), "Drum & Bass") != genres.end());
+    REQUIRE(std::find(genres.begin(), genres.end(), "Hip-Hop") != genres.end());
+    REQUIRE(std::find(genres.begin(), genres.end(), "Trap") != genres.end());
+    REQUIRE(proc.getPresetsForGenre("Drum & Bass").size() >= 2);
+
+    tmpDir.deleteRecursively();
+}

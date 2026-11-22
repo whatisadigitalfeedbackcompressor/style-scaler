@@ -262,6 +262,10 @@ nlohmann::json toJson(const StyleProfile& p) {
     j["default_bpm"] = p.default_bpm;
     j["time_signature"] = {{"numerator", p.time_sig_num}, {"denominator", p.time_sig_den}};
     j["source"] = p.source;
+    if (!p.tags.empty()) j["tags"] = p.tags;
+    if (!p.genre_source.empty()) j["genre_source"] = p.genre_source;
+    if (!p.artist.empty()) j["artist"] = p.artist;
+    if (!p.album.empty()) j["album"] = p.album;
 
     // Harmony
     nlohmann::json vocabJson = nlohmann::json::array();
@@ -366,6 +370,17 @@ std::expected<StyleProfile, std::string> fromJson(const nlohmann::json& j) {
     p.bpm_max = reqNum(j, "bpm_max", 175.0);
     p.default_bpm = reqNum(j, "default_bpm", 120.0);
     p.source = j.value("source", "preset");
+    if (j.contains("tags") && j["tags"].is_array()) {
+        for (const auto& t : j["tags"]) {
+            if (t.is_string()) {
+                auto s = t.get<std::string>();
+                if (!s.empty()) p.tags.push_back(std::move(s));
+            }
+        }
+    }
+    p.genre_source = j.value("genre_source", "");
+    p.artist = j.value("artist", "");
+    p.album = j.value("album", "");
 
     if (j.contains("time_signature") && j["time_signature"].is_object()) {
         p.time_sig_num = j["time_signature"].value("numerator", 4);

@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "StylePresetData.h"
+#include "style_scaler/AudioMetadata.h"
 #include "style_scaler/SmfIO.h"
 
 #include <algorithm>
@@ -153,11 +154,10 @@ void StyleScalerAudioProcessor::loadBundledAndUserPresets() {
         }
     }
 
-    const juce::File userDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                                   .getChildFile("StyleScaler")
-                                   .getChildFile("presets");
+    const juce::File userDir = userPresetsDirectory();
     if (userDir.isDirectory()) {
         for (const auto& f : userDir.findChildFiles(juce::File::findFiles, false, "*.json")) {
+            if (f.getFileName().equalsIgnoreCase("catalog.json")) continue;
             auto parsed = loadFromFile(f.getFullPathName().toStdString());
             if (parsed) {
                 auto it = std::find_if(preset_library_.begin(), preset_library_.end(),
@@ -171,6 +171,19 @@ void StyleScalerAudioProcessor::loadBundledAndUserPresets() {
     if (preset_library_.empty()) {
         preset_library_.push_back(makeDefaultStyleProfile());
     }
+
+    std::sort(preset_library_.begin(), preset_library_.end(), [](const StyleProfile& a, const StyleProfile& b) {
+        auto low = [](const std::string& s) {
+            std::string r = s;
+            std::transform(r.begin(), r.end(), r.begin(), [](unsigned char c) {
+                return static_cast<char>(std::tolower(c));
+            });
+            return r;
+        };
+        const std::string ga = low(a.genre), gb = low(b.genre);
+        if (ga != gb) return ga < gb;
+        return low(a.name) < low(b.name);
+    });
 }
 
 void StyleScalerAudioProcessor::prepareToPlay(double sampleRate, int /*samplesPerBlock*/) {
@@ -394,6 +407,33 @@ std::vector<StyleProfile> StyleScalerAudioProcessor::getPresetLibrary() const {
     return preset_library_;
 }
 
+std::vector<std::string> StyleScalerAudioProcessor::getAvailableGenres() const {
+    std::lock_guard<std::mutex> lk(state_mutex_);
+    std::vector<std::string> genres;
+    for (const auto& p : preset_library_) {
+        const std::string g = p.genre.empty() ? std::string("Uncategorized") : p.genre;
+        if (std::find(genres.begin(), genres.end(), g) == genres.end()) {
+            genres.push_back(g);
+        }
+    }
+    return genres;
+}
+
+std::vector<StyleProfile> StyleScalerAudioProcessor::getPresetsForGenre(const std::string& genre) const {
+    std::lock_guard<std::mutex> lk(state_mutex_);
+    if (genre.empty() || genre == "All Genres") {
+        return preset_library_;
+    }
+    std::vector<StyleProfile> filtered;
+    for (const auto& p : preset_library_) {
+        const std::string g = p.genre.empty() ? std::string("Uncategorized") : p.genre;
+        if (g == genre) {
+            filtered.push_back(p);
+        }
+    }
+    return filtered;
+}
+
 int StyleScalerAudioProcessor::findPresetIndexById(const std::string& id) const {
     std::lock_guard<std::mutex> lk(state_mutex_);
     for (size_t i = 0; i < preset_library_.size(); ++i) {
@@ -606,18 +646,22 @@ void StyleScalerAudioProcessor::analyzeDroppedFile(const juce::File& file,
             tx_status_.message = std::move(msg);
         },
         [this](TranscriptionService::Result res) {
-            {
-                std::lock_guard<std::mutex> slk(status_mutex_);
-                tx_status_.running = false;
-                tx_status_.progress = res.success ? 1.0f : 0.0f;
-                tx_status_.backend_name = res.backend_name;
-                tx_status_.message = res.success
-                                         ? ("Loaded into " + std::string(res.target_slot == TranscriptionService::TargetSlot::SlotB ? "Slot B" : "Slot A") +
-                                            " (" + res.backend_name + ", " + std::to_string(res.num_notes) + " notes)")
-                                         : ("Error: " + res.error);
-            }
+            const bool isSlotB = (res.target_slot == TranscriptionService::TargetSlot::SlotB);
             if (res.success) {
-                setSlotProfile(res.target_slot == TranscriptionService::TargetSlot::SlotB, res.profile, true);
+                setSlotProfile(isSlotB, res.profile, true);
+                (void)saveProfileToLocalDatabase(res.profile);
+            }
+            std::lock_guard<std::mutex> slk(status_mutex_);
+            tx_status_.running = false;
+            tx_status_.progress = res.success ? 1.0f : 0.0f;
+            tx_status_.backend_name = res.backend_name;
+            if (res.success) {
+                const std::string gSrc = res.profile.genre_source.empty() ? "auto" : res.profile.genre_source;
+                tx_status_.message = "Loaded into " + std::string(isSlotB ? "Slot B" : "Slot A") +
+                                     " [" + res.profile.genre + " / " + gSrc + "] (" +
+                                     res.backend_name + ", " + std::to_string(res.num_notes) + " notes)";
+            } else {
+                tx_status_.message = "Error: " + res.error;
             }
         });
 }
@@ -648,18 +692,21 @@ void StyleScalerAudioProcessor::stopAndAnalyzeCapture(TranscriptionService::Targ
             tx_status_.message = std::move(msg);
         },
         [this](TranscriptionService::Result res) {
-            {
-                std::lock_guard<std::mutex> slk(status_mutex_);
-                tx_status_.running = false;
-                tx_status_.progress = res.success ? 1.0f : 0.0f;
-                tx_status_.backend_name = res.backend_name;
-                tx_status_.message = res.success
-                                         ? ("Captured -> " + std::string(res.target_slot == TranscriptionService::TargetSlot::SlotB ? "Slot B" : "Slot A") +
-                                            " (" + res.backend_name + ", " + std::to_string(res.num_notes) + " notes)")
-                                         : ("Error: " + res.error);
-            }
+            const bool isSlotB = (res.target_slot == TranscriptionService::TargetSlot::SlotB);
             if (res.success) {
-                setSlotProfile(res.target_slot == TranscriptionService::TargetSlot::SlotB, res.profile, true);
+                setSlotProfile(isSlotB, res.profile, true);
+            }
+            std::lock_guard<std::mutex> slk(status_mutex_);
+            tx_status_.running = false;
+            tx_status_.progress = res.success ? 1.0f : 0.0f;
+            tx_status_.backend_name = res.backend_name;
+            if (res.success) {
+                const std::string gSrc = res.profile.genre_source.empty() ? "auto" : res.profile.genre_source;
+                tx_status_.message = "Captured -> " + std::string(isSlotB ? "Slot B" : "Slot A") +
+                                     " [" + res.profile.genre + " / " + gSrc + "] (" +
+                                     res.backend_name + ", " + std::to_string(res.num_notes) + " notes)";
+            } else {
+                tx_status_.message = "Error: " + res.error;
             }
         });
 }
@@ -667,6 +714,76 @@ void StyleScalerAudioProcessor::stopAndAnalyzeCapture(TranscriptionService::Targ
 StyleScalerAudioProcessor::TranscriptionStatus StyleScalerAudioProcessor::getTranscriptionStatus() const {
     std::lock_guard<std::mutex> slk(status_mutex_);
     return tx_status_;
+}
+
+juce::File StyleScalerAudioProcessor::userPresetsDirectory() {
+    return PresetCatalogSync::defaultCacheDirectory();
+}
+
+bool StyleScalerAudioProcessor::saveProfileToLocalDatabase(const StyleProfile& profile, std::string* outError) {
+    const juce::File userDir = userPresetsDirectory();
+    if (!userDir.createDirectory()) {
+        if (outError) *outError = "Could not create user presets directory: " + userDir.getFullPathName().toStdString();
+        return false;
+    }
+
+    const std::string safeStem = AudioMetadataReader::sanitizeGenreSlug(profile.id.empty() ? profile.name : profile.id);
+    const juce::File destFile = userDir.getChildFile(juce::String(safeStem) + ".json");
+    if (auto sr = saveToFile(profile, destFile.getFullPathName().toStdString()); !sr) {
+        if (outError) *outError = sr.error();
+        return false;
+    }
+
+    nlohmann::json presetsArr = nlohmann::json::array();
+    std::map<std::string, std::vector<std::string>> genresMap;
+    const std::string stamp = juce::Time::getCurrentTime().toISO8601(true).toStdString();
+
+    for (const auto& f : userDir.findChildFiles(juce::File::findFiles, false, "*.json")) {
+        if (f.getFileName().equalsIgnoreCase("catalog.json")) continue;
+        auto parsed = loadFromFile(f.getFullPathName().toStdString());
+        if (!parsed) continue;
+
+        const std::string sha = juce::SHA256(f).toHexString().toLowerCase().toStdString();
+        nlohmann::json item = {
+            {"id", parsed->id},
+            {"name", parsed->name},
+            {"genre", parsed->genre},
+            {"description", parsed->description},
+            {"file", f.getFileName().toStdString()},
+            {"sha256", sha},
+            {"bpm_min", parsed->bpm_min},
+            {"bpm_max", parsed->bpm_max},
+            {"default_bpm", parsed->default_bpm},
+            {"mode", std::string(modeName(parsed->harmony.mode))},
+            {"tonic_pc", parsed->harmony.tonic_pc},
+            {"updated_at", stamp}
+        };
+        if (!parsed->tags.empty()) item["tags"] = parsed->tags;
+        if (!parsed->genre_source.empty()) item["genre_source"] = parsed->genre_source;
+        if (!parsed->artist.empty()) item["artist"] = parsed->artist;
+        presetsArr.push_back(std::move(item));
+
+        const std::string gKey = parsed->genre.empty() ? std::string("Uncategorized") : parsed->genre;
+        genresMap[gKey].push_back(parsed->id);
+    }
+
+    for (auto& [_, ids] : genresMap) {
+        std::sort(ids.begin(), ids.end());
+    }
+
+    nlohmann::json catalog = {
+        {"schema_version", 1},
+        {"catalog_name", "StyleScaler Local Preset Database"},
+        {"updated_at", stamp},
+        {"genres", genresMap},
+        {"presets", presetsArr}
+    };
+
+    const std::string catalogStr = catalog.dump(2) + "\n";
+    (void)userDir.getChildFile("catalog.json").replaceWithData(catalogStr.data(), catalogStr.size());
+
+    reloadPresetLibrary();
+    return true;
 }
 
 void StyleScalerAudioProcessor::reloadPresetLibrary() {

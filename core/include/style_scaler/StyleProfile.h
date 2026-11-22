@@ -105,6 +105,12 @@ struct StyleProfile {
     int time_sig_den = 4;
     std::string source = "preset";
 
+    // Optional song/preset metadata (schema_version remains 1)
+    std::vector<std::string> tags;
+    std::string genre_source;
+    std::string artist;
+    std::string album;
+
     HarmonyAxis harmony;
     RhythmAxis rhythm;
     VoicingAxis voicing;

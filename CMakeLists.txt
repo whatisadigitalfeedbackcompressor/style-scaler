@@ -38,6 +38,7 @@ FetchContent_MakeAvailable(nlohmann_json)
 add_library(style_core STATIC
     core/src/Types.cpp
     core/src/StyleProfile.cpp
+    core/src/AudioMetadata.cpp
     core/src/SmfIO.cpp
     core/src/MidiStyleAnalyzer.cpp
     core/src/StyleBlender.cpp

@@ -93,6 +93,8 @@ public:
 
     EngineSnapshot getSnapshot() const;
     std::vector<StyleProfile> getPresetLibrary() const;
+    std::vector<std::string> getAvailableGenres() const;
+    std::vector<StyleProfile> getPresetsForGenre(const std::string& genre) const;
     int findPresetIndexById(const std::string& id) const;
 
     void selectSlotAPreset(int libraryIndex);
@@ -146,7 +148,9 @@ public:
     };
     TranscriptionStatus getTranscriptionStatus() const;
 
-    // --- GitHub / Remote Preset Catalog Sync ---
+    // --- GitHub / Remote Preset Catalog Sync & Local Database ---
+    static juce::File userPresetsDirectory();
+    bool saveProfileToLocalDatabase(const StyleProfile& profile, std::string* outError = nullptr);
     void reloadPresetLibrary();
     void syncRemotePresetsAsync();
     bool isCatalogSyncRunning() const noexcept { return catalog_sync_.isRunning(); }

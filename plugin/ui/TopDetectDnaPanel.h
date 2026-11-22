@@ -25,6 +25,7 @@ public:
     void refreshFromProcessor();
 
 private:
+    void populateGenreFilter();
     void populatePresetCombos();
     void handleBrowseAudioOrMidi();
     void handleLoadJsonProfile(bool isSlotB);
@@ -33,6 +34,8 @@ private:
     void handleEditCatalogUrl();
 
     StyleScalerAudioProcessor& processor_;
+    std::string last_library_sig_;
+    std::string active_genre_filter_{"All Genres"};
     bool drag_hover_ = false;
     TranscriptionService::TargetSlot target_slot_ = TranscriptionService::TargetSlot::SlotA;
     float capture_peak_ = 0.0f;
@@ -51,6 +54,7 @@ private:
     juce::Label model_badge_lbl_;
 
     // Center: Slot A <-> Slot B + 4 axis blend sliders
+    juce::ComboBox genre_filter_combo_;
     juce::ComboBox slot_a_combo_;
     juce::ComboBox slot_b_combo_;
     juce::TextButton load_a_json_btn_{"JSON"};

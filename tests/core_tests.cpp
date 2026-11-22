@@ -1,6 +1,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "style_scaler/AudioMetadata.h"
 #include "style_scaler/GenerationEngine.h"
 #include "style_scaler/MidiStyleAnalyzer.h"
 #include "style_scaler/SmfIO.h"
@@ -279,4 +280,221 @@ TEST_CASE("MidiStyleAnalyzer::analyzeCorpus pools multi-key songs into one valid
     CHECK(pooled.bpm_min <= 92.0);
     CHECK(pooled.bpm_max >= 174.0);
     CHECK_FALSE(pooled.harmony.vocabulary.empty());
+}
+
+
+namespace {
+
+void pushU32BE(std::vector<uint8_t>& buf, uint32_t v) {
+    buf.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+    buf.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+    buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+    buf.push_back(static_cast<uint8_t>(v & 0xFF));
+}
+
+void pushU32LE(std::vector<uint8_t>& buf, uint32_t v) {
+    buf.push_back(static_cast<uint8_t>(v & 0xFF));
+    buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+    buf.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+    buf.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+}
+
+void pushSynchsafe(std::vector<uint8_t>& buf, uint32_t v) {
+    buf.push_back(static_cast<uint8_t>((v >> 21) & 0x7F));
+    buf.push_back(static_cast<uint8_t>((v >> 14) & 0x7F));
+    buf.push_back(static_cast<uint8_t>((v >> 7) & 0x7F));
+    buf.push_back(static_cast<uint8_t>(v & 0x7F));
+}
+
+void pushStr(std::vector<uint8_t>& buf, std::string_view s) {
+    buf.insert(buf.end(), s.begin(), s.end());
+}
+
+std::vector<uint8_t> buildId3v23Tag(const std::vector<std::pair<std::string, std::string>>& textFrames) {
+    std::vector<uint8_t> body;
+    for (const auto& [fid, val] : textFrames) {
+        pushStr(body, fid);
+        pushU32BE(body, static_cast<uint32_t>(1 + val.size()));
+        body.push_back(0);
+        body.push_back(0);
+        body.push_back(3); // UTF-8
+        pushStr(body, val);
+    }
+    std::vector<uint8_t> out = {'I', 'D', '3', 3, 0, 0};
+    pushSynchsafe(out, static_cast<uint32_t>(body.size()));
+    out.insert(out.end(), body.begin(), body.end());
+    return out;
+}
+
+std::vector<uint8_t> buildRiffChunk(std::string_view fourcc, const std::vector<uint8_t>& payload) {
+    std::vector<uint8_t> out;
+    pushStr(out, fourcc);
+    pushU32LE(out, static_cast<uint32_t>(payload.size()));
+    out.insert(out.end(), payload.begin(), payload.end());
+    if ((payload.size() & 1u) != 0) out.push_back(0);
+    return out;
+}
+
+} // namespace
+
+TEST_CASE("AudioMetadataReader parses ID3v2.3, ID3v1, FLAC, WAV, MIDI and key/genre helpers", "[metadata]") {
+    SECTION("ID3v2.3 MP3 header tags") {
+        auto bytes = buildId3v23Tag({
+            {"TCON", "(127)Liquid Drum & Bass"},
+            {"TIT2", "Midnight"},
+            {"TPE1", "Calibre"},
+            {"TBPM", "174"},
+            {"TKEY", "8A"},
+        });
+        bytes.resize(bytes.size() + 32, 0xFF); // fake MP3 frames after header
+
+        const auto meta = AudioMetadataReader::readFromMemory(bytes.data(), bytes.size(), ".mp3");
+        REQUIRE(meta.canonical_genre == "Liquid DnB");
+        REQUIRE(meta.genre_source == "id3v2");
+        REQUIRE(meta.title == "Midnight");
+        REQUIRE(meta.artist == "Calibre");
+        REQUIRE(meta.bpm == Approx(174.0));
+        REQUIRE(meta.key_pc.has_value());
+        REQUIRE(*meta.key_pc == 9);
+        REQUIRE(meta.mode == Mode::Minor);
+    }
+
+    SECTION("ID3v1 footer") {
+        std::vector<uint8_t> mp3(256, 0);
+        const size_t off = mp3.size() - 128;
+        mp3[off] = 'T';
+        mp3[off + 1] = 'A';
+        mp3[off + 2] = 'G';
+        std::string title = "Classic";
+        std::copy(title.begin(), title.end(), mp3.begin() + static_cast<ptrdiff_t>(off + 3));
+        mp3[off + 127] = 127; // Drum & Bass in Winamp extended table
+
+        const auto meta = AudioMetadataReader::readFromMemory(mp3.data(), mp3.size(), ".mp3");
+        REQUIRE(meta.canonical_genre == "Drum & Bass");
+        REQUIRE(meta.genre_source == "id3v1");
+        REQUIRE(meta.title == "Classic");
+    }
+
+    SECTION("FLAC Vorbis Comment") {
+        std::vector<uint8_t> vc;
+        pushU32LE(vc, 0); // empty vendor
+        pushU32LE(vc, 2); // 2 comments
+        const std::string c1 = "GENRE=Boom Bap";
+        const std::string c2 = "ARTIST=J Dilla";
+        pushU32LE(vc, static_cast<uint32_t>(c1.size()));
+        pushStr(vc, c1);
+        pushU32LE(vc, static_cast<uint32_t>(c2.size()));
+        pushStr(vc, c2);
+
+        std::vector<uint8_t> flac = {'f', 'L', 'a', 'C', 0x84}; // isLast | type 4 (VORBIS_COMMENT)
+        const uint32_t sz = static_cast<uint32_t>(vc.size());
+        flac.push_back(static_cast<uint8_t>((sz >> 16) & 0xFF));
+        flac.push_back(static_cast<uint8_t>((sz >> 8) & 0xFF));
+        flac.push_back(static_cast<uint8_t>(sz & 0xFF));
+        flac.insert(flac.end(), vc.begin(), vc.end());
+
+        const auto meta = AudioMetadataReader::readFromMemory(flac.data(), flac.size(), ".flac");
+        REQUIRE(meta.canonical_genre == "90s Hip-Hop");
+        REQUIRE(meta.genre_source == "vorbis");
+        REQUIRE(meta.artist == "J Dilla");
+    }
+
+    SECTION("WAV LIST/INFO and embedded id3 chunk") {
+        std::vector<uint8_t> infoBody;
+        pushStr(infoBody, "INFO");
+        auto ignr = buildRiffChunk("IGNR", {'U', 'K', ' ', 'G', 'a', 'r', 'a', 'g', 'e', 0});
+        auto iart = buildRiffChunk("IART", {'B', 'u', 'r', 'i', 'a', 'l', 0});
+        infoBody.insert(infoBody.end(), ignr.begin(), ignr.end());
+        infoBody.insert(infoBody.end(), iart.begin(), iart.end());
+        auto listChunk = buildRiffChunk("LIST", infoBody);
+
+        std::vector<uint8_t> wav;
+        pushStr(wav, "RIFF");
+        pushU32LE(wav, static_cast<uint32_t>(4 + listChunk.size()));
+        pushStr(wav, "WAVE");
+        wav.insert(wav.end(), listChunk.begin(), listChunk.end());
+
+        const auto meta1 = AudioMetadataReader::readFromMemory(wav.data(), wav.size(), ".wav");
+        REQUIRE(meta1.canonical_genre == "UK Garage");
+        REQUIRE(meta1.genre_source == "riff_info");
+        REQUIRE(meta1.artist == "Burial");
+
+        auto id3Body = buildId3v23Tag({{"TCON", "Neurofunk"}});
+        auto id3Chunk = buildRiffChunk("id3 ", id3Body);
+        std::vector<uint8_t> wav2;
+        pushStr(wav2, "RIFF");
+        pushU32LE(wav2, static_cast<uint32_t>(4 + id3Chunk.size()));
+        pushStr(wav2, "WAVE");
+        wav2.insert(wav2.end(), id3Chunk.begin(), id3Chunk.end());
+
+        const auto meta2 = AudioMetadataReader::readFromMemory(wav2.data(), wav2.size(), ".wav");
+        REQUIRE(meta2.canonical_genre == "Neuro DnB");
+        REQUIRE(meta2.genre_source == "id3v2");
+    }
+
+    SECTION("MIDI meta text and Key Signature table") {
+        std::vector<uint8_t> trk;
+        const std::string gText = "Genre: Melodic Techno";
+        trk.push_back(0x00);
+        trk.push_back(0xFF);
+        trk.push_back(0x01);
+        trk.push_back(static_cast<uint8_t>(gText.size()));
+        pushStr(trk, gText);
+        // Key Sig: sf = -3 (0xFD, 3 flats = Eb Maj / C min), mi = 1 (minor) -> C minor (pc=0, Minor)
+        trk.insert(trk.end(), {0x00, 0xFF, 0x59, 0x02, 0xFD, 0x01});
+        // End of track
+        trk.insert(trk.end(), {0x00, 0xFF, 0x2F, 0x00});
+
+        std::vector<uint8_t> mid;
+        pushStr(mid, "MThd");
+        pushU32BE(mid, 6);
+        mid.insert(mid.end(), {0, 0, 0, 1, 1, 0xE0});
+        pushStr(mid, "MTrk");
+        pushU32BE(mid, static_cast<uint32_t>(trk.size()));
+        mid.insert(mid.end(), trk.begin(), trk.end());
+
+        const auto meta = AudioMetadataReader::readFromMemory(mid.data(), mid.size(), ".mid");
+        REQUIRE(meta.canonical_genre == "Melodic Techno");
+        REQUIRE(meta.genre_source == "midi_meta");
+        REQUIRE(meta.key_pc.has_value());
+        REQUIRE(*meta.key_pc == 0);
+        REQUIRE(meta.mode == Mode::Minor);
+    }
+
+    SECTION("Path fallback, heuristic fallback, and corrupt buffer safety") {
+        REQUIRE(AudioMetadataReader::detectGenreFromPath("C:/Samples/Dark_Trap_Pack/beat01.wav") == "Trap");
+
+        StyleProfile dnbProf = makeDefaultStyleProfile();
+        dnbProf.default_bpm = 174.0;
+        dnbProf.harmony.chromaticism = 0.12;
+        dnbProf.rhythm.syncopation = 0.25;
+        REQUIRE(AudioMetadataReader::inferGenreFromProfileHeuristic(dnbProf) == "Liquid DnB");
+
+        StyleProfile hhProf = makeDefaultStyleProfile();
+        hhProf.default_bpm = 92.0;
+        hhProf.rhythm.swing = 0.18;
+        hhProf.voicing.extension_richness = 0.30;
+        REQUIRE(AudioMetadataReader::inferGenreFromProfileHeuristic(hhProf) == "90s Hip-Hop");
+
+        const std::vector<uint8_t> garbage = {'I', 'D', '3', 3, 0, 0, 0x7F, 0x7F, 0x7F, 0x7F, 'T', 'C'};
+        const auto safe = AudioMetadataReader::readFromMemory(garbage.data(), garbage.size(), ".mp3");
+        REQUIRE(!safe.hasGenre());
+    }
+
+    SECTION("StyleProfile metadata JSON round-trip preserves schema_version 1") {
+        auto prof = loadFromFile(presetsRoot() / "90s_hiphop.json");
+        REQUIRE(prof.has_value());
+        REQUIRE(validate(*prof).valid);
+
+        prof->tags = {"hip-hop", "boom bap"};
+        prof->genre_source = "id3v2";
+        prof->artist = "Sample Artist";
+        prof->album = "Sample Album";
+        const auto rt = fromJson(toJson(*prof));
+        REQUIRE(rt.has_value());
+        REQUIRE(rt->tags == prof->tags);
+        REQUIRE(rt->genre_source == "id3v2");
+        REQUIRE(rt->artist == "Sample Artist");
+        REQUIRE(rt->album == "Sample Album");
+    }
 }

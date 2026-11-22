@@ -19,6 +19,7 @@ import sys
 from typing import List, Optional
 
 from analyze_styles import analyze_corpus, collect_inputs
+from audio_metadata import canonicalize_genre, read_audio_metadata, sanitize_genre_slug
 from build_catalog import build_catalog
 import json
 
@@ -71,7 +72,7 @@ def main() -> None:
         description="Deconstruct songs offline -> update catalog.json -> optionally push to GitHub."
     )
     parser.add_argument("--input", nargs="+", required=True, help="Audio/MIDI files or folders")
-    parser.add_argument("--mode", choices=["corpus", "per-folder", "per-song"], default="per-folder")
+    parser.add_argument("--mode", choices=["corpus", "per-folder", "per-song", "auto-genre"], default="per-folder")
     parser.add_argument("--out-dir", default=str(ROOT / "presets" / "styles"))
     parser.add_argument("--catalog", default=str(ROOT / "presets" / "catalog.json"))
     parser.add_argument("--id", default=None)
@@ -115,11 +116,41 @@ def main() -> None:
         files = collect_inputs(args.input)
         if not files:
             raise SystemExit("No .mid/.midi/.wav files found for Python fallback")
-        pid = args.id or Path(args.input[0]).stem.lower().replace(" ", "_")
-        pname = args.name or pid.replace("_", " ").title()
-        pgenre = args.genre or "Deconstructed"
-        prof = analyze_corpus(files, pid, pname, pgenre)
-        (out_dir / f"{pid}.json").write_text(json.dumps(prof, indent=2) + "\n", encoding="utf-8")
+        if args.mode == "auto-genre":
+            grouped: dict[str, dict] = {}
+            for fp in files:
+                meta = read_audio_metadata(Path(fp))
+                genre_name = meta.canonical_genre or (canonicalize_genre(args.genre) if args.genre else "Deconstructed")
+                src_name = meta.genre_source if meta.has_genre else "fallback"
+                slug = sanitize_genre_slug(genre_name)
+                bucket = grouped.setdefault(slug, {"genre": genre_name, "files": [], "tags": [], "sources": [], "artists": set()})
+                bucket["files"].append(fp)
+                bucket["sources"].append(src_name)
+                if meta.artist:
+                    bucket["artists"].add(meta.artist)
+                for t in meta.tags + [genre_name.lower()]:
+                    if t not in bucket["tags"]:
+                        bucket["tags"].append(t)
+            for slug, bucket in grouped.items():
+                prof = analyze_corpus(bucket["files"], slug, bucket["genre"], bucket["genre"])
+                prof["tags"] = bucket["tags"]
+                prof["genre_source"] = bucket["sources"][0] if bucket["sources"] else "fallback"
+                if len(bucket["artists"]) == 1:
+                    prof["artist"] = next(iter(bucket["artists"]))
+                (out_dir / f"{slug}.json").write_text(json.dumps(prof, indent=2) + "\n", encoding="utf-8")
+        else:
+            meta = read_audio_metadata(Path(files[0]))
+            pid = args.id or sanitize_genre_slug(meta.title or Path(args.input[0]).stem)
+            pname = args.name or meta.title or pid.replace("_", " ").title()
+            pgenre = canonicalize_genre(args.genre) if args.genre else (meta.canonical_genre or "Deconstructed")
+            prof = analyze_corpus(files, pid, pname, pgenre)
+            if meta.tags:
+                prof["tags"] = meta.tags
+            if meta.has_genre:
+                prof["genre_source"] = meta.genre_source
+            if meta.artist:
+                prof["artist"] = meta.artist
+            (out_dir / f"{pid}.json").write_text(json.dumps(prof, indent=2) + "\n", encoding="utf-8")
 
     cat = build_catalog(out_dir, catalog_path, "StyleScaler Preset Catalog")
     print(f"Catalog updated: {catalog_path} ({len(cat['presets'])} presets)")

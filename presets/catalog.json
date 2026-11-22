@@ -1,7 +1,19 @@
 {
   "schema_version": 1,
   "catalog_name": "StyleScaler Preset Catalog",
-  "updated_at": "2026-11-22T16:09:07Z",
+  "updated_at": "2026-11-22T16:34:03Z",
+  "genres": {
+    "Drum & Bass": [
+      "liquid_dnb",
+      "neuro_dnb"
+    ],
+    "Hip-Hop": [
+      "90s_hiphop"
+    ],
+    "Trap": [
+      "trap"
+    ]
+  },
   "presets": [
     {
       "id": "90s_hiphop",
@@ -15,7 +27,7 @@
       "default_bpm": 92.0,
       "mode": "dorian",
       "tonic_pc": 0,
-      "updated_at": "2026-11-22T16:09:07Z"
+      "updated_at": "2026-11-22T16:34:03Z"
     },
     {
       "id": "liquid_dnb",
@@ -29,7 +41,7 @@
       "default_bpm": 174.0,
       "mode": "minor",
       "tonic_pc": 0,
-      "updated_at": "2026-11-22T16:09:07Z"
+      "updated_at": "2026-11-22T16:34:03Z"
     },
     {
       "id": "neuro_dnb",
@@ -43,7 +55,7 @@
       "default_bpm": 174.0,
       "mode": "phrygian",
       "tonic_pc": 0,
-      "updated_at": "2026-11-22T16:09:07Z"
+      "updated_at": "2026-11-22T16:34:03Z"
     },
     {
       "id": "trap",
@@ -57,7 +69,7 @@
       "default_bpm": 140.0,
       "mode": "phrygian",
       "tonic_pc": 0,
-      "updated_at": "2026-11-22T16:09:07Z"
+      "updated_at": "2026-11-22T16:34:03Z"
     }
   ]
 }

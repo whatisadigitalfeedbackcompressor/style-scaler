@@ -278,6 +278,10 @@ StyleProfile MidiStyleAnalyzer::analyze(const std::vector<NoteEvent>& rawEvents,
     profile.name = options.name.empty() ? "Analyzed Style" : options.name;
     profile.genre = options.genre.empty() ? "Analyzed" : options.genre;
     profile.source = options.source.empty() ? "in_plugin_analysis" : options.source;
+    profile.tags = options.tags;
+    profile.genre_source = options.genre_source;
+    profile.artist = options.artist;
+    profile.album = options.album;
     profile.time_sig_num = std::max(1, options.time_sig_num);
     profile.time_sig_den = std::max(1, options.time_sig_den);
     const double safeBpm = std::clamp(bpm > 20.0 ? bpm : 120.0, 40.0, 260.0);
@@ -782,6 +786,10 @@ StyleProfile MidiStyleAnalyzer::analyzeCorpus(const std::vector<SongInput>& song
         if (!options.name.empty()) def.name = options.name;
         if (!options.genre.empty()) def.genre = options.genre;
         if (!options.source.empty()) def.source = options.source;
+        def.tags = options.tags;
+        def.genre_source = options.genre_source;
+        def.artist = options.artist;
+        def.album = options.album;
         return def;
     }
     if (perSong.size() == 1) {

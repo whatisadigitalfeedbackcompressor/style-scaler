@@ -306,6 +306,14 @@ TranscriptionService::DeconstructedSong TranscriptionService::deconstructFileBlo
         return out;
     }
 
+    const SongMetadata meta = AudioMetadataReader::readFile(
+        std::filesystem::path(file.getFullPathName().toStdString()));
+
+    DeconstructOptions effectiveOpts = opts;
+    if (effectiveOpts.bpm_hint <= 20.0 && meta.bpm > 20.0) {
+        effectiveOpts.bpm_hint = meta.bpm;
+    }
+
     if (file.hasFileExtension(".mid") || file.hasFileExtension(".midi")) {
         if (onProgress && !onProgress(0.25f, "Reading MIDI file...")) {
             out.error = "Cancelled";
@@ -317,10 +325,12 @@ TranscriptionService::DeconstructedSong TranscriptionService::deconstructFileBlo
             return out;
         }
         out.song_input.notes = std::move(smf->notes);
-        out.song_input.bpm = (opts.bpm_hint > 20.0) ? opts.bpm_hint : smf->bpm;
+        out.song_input.bpm = (opts.bpm_hint > 20.0) ? opts.bpm_hint : (smf->bpm > 20.0 ? smf->bpm : effectiveOpts.bpm_hint);
+        if (out.song_input.bpm <= 20.0) out.song_input.bpm = 120.0;
         out.song_input.time_sig_num = smf->time_sig_num;
         out.song_input.time_sig_den = smf->time_sig_den;
         out.backend_name = "MIDI Direct";
+        out.metadata = meta;
         out.success = true;
         return out;
     }
@@ -330,13 +340,17 @@ TranscriptionService::DeconstructedSong TranscriptionService::deconstructFileBlo
         return out;
     }
     std::string decodeErr;
-    const auto mono16k = decodeAudioFileTo16kMono(file, decodeErr, opts.max_seconds);
+    const auto mono16k = decodeAudioFileTo16kMono(file, decodeErr, effectiveOpts.max_seconds);
     if (mono16k.empty()) {
         out.error = decodeErr.empty() ? "Failed to decode audio file" : decodeErr;
         return out;
     }
 
-    return deconstructAudio16kBlocking(mono16k, opts, onProgress);
+    out = deconstructAudio16kBlocking(mono16k, effectiveOpts, onProgress);
+    if (out.success) {
+        out.metadata = meta;
+    }
+    return out;
 }
 
 class TranscriptionService::WorkerThread : public juce::Thread {
@@ -410,20 +424,54 @@ public:
             return;
         }
 
-        reportProgress(0.92f, "Building 4-axis StyleProfile...");
+        reportProgress(0.92f, "Building 4-axis StyleProfile & detecting genre...");
+        const std::string displayTitle = !ds.metadata.title.empty() ? ds.metadata.title : sourceTitle;
+        const std::string rawSlugSource = !ds.metadata.artist.empty()
+                                              ? (ds.metadata.artist + "_" + displayTitle)
+                                              : displayTitle;
+
         AnalysisOptions aopts;
-        aopts.id = juce::String(sourceTitle).replaceCharacter(' ', '_').toLowerCase().toStdString();
-        aopts.name = sourceTitle;
-        aopts.genre = (ds.backend_name == "MIDI Direct") ? "Analyzed MIDI" : "Transcribed Audio";
+        aopts.id = AudioMetadataReader::sanitizeGenreSlug(rawSlugSource);
+        aopts.name = displayTitle;
+        aopts.genre = ds.metadata.hasGenre()
+                          ? ds.metadata.canonical_genre
+                          : ((ds.backend_name == "MIDI Direct") ? "Analyzed MIDI" : "Transcribed Audio");
         aopts.source = ds.backend_name;
+        aopts.tags = ds.metadata.tags;
+        aopts.genre_source = ds.metadata.hasGenre() ? ds.metadata.genre_source : "none";
+        aopts.artist = ds.metadata.artist;
+        aopts.album = ds.metadata.album;
         aopts.time_sig_num = ds.song_input.time_sig_num;
         aopts.time_sig_den = ds.song_input.time_sig_den;
 
         res.profile = MidiStyleAnalyzer::analyze(ds.song_input.notes, ds.song_input.bpm, aopts);
+
+        if (!ds.metadata.hasGenre()) {
+            const std::string inferred = AudioMetadataReader::inferGenreFromProfileHeuristic(res.profile);
+            res.profile.genre = inferred;
+            res.profile.genre_source = "heuristic";
+            std::string lowTag;
+            lowTag.reserve(inferred.size());
+            for (unsigned char c : inferred) lowTag.push_back(static_cast<char>(std::tolower(c)));
+            if (std::find(res.profile.tags.begin(), res.profile.tags.end(), lowTag) == res.profile.tags.end()) {
+                res.profile.tags.push_back(lowTag);
+            }
+            ds.metadata.canonical_genre = inferred;
+            ds.metadata.genre_source = "heuristic";
+            ds.metadata.tags = res.profile.tags;
+        }
+
+        res.profile.description = "Analyzed " + res.profile.genre + " (" + res.profile.genre_source + ")";
+        if (!res.profile.artist.empty()) {
+            res.profile.description += " by " + res.profile.artist;
+        }
+
+        res.metadata = std::move(ds.metadata);
         res.num_notes = ds.song_input.notes.size();
         res.backend_name = ds.backend_name;
         res.success = true;
-        reportProgress(1.0f, "Style analysis ready (" + std::to_string(res.num_notes) + " notes)");
+        reportProgress(1.0f, "Ready [" + res.profile.genre + " via " + res.profile.genre_source + "] (" +
+                                 std::to_string(res.num_notes) + " notes)");
         finish(std::move(res));
     }
 

@@ -7,7 +7,18 @@ namespace style_scaler::ui {
 namespace {
 bool isSupportedDropExtension(const juce::String& filePath) {
     const juce::File f(filePath);
-    return f.hasFileExtension(".wav;.aif;.aiff;.flac;.ogg;.mp3;.mid;.midi");
+    return f.hasFileExtension(".wav;.aif;.aiff;.flac;.ogg;.mp3;.m4a;.aac;.mid;.midi");
+}
+
+std::string buildLibrarySignature(const std::vector<StyleProfile>& lib) {
+    std::string sig = std::to_string(lib.size());
+    for (const auto& p : lib) {
+        sig.push_back(';');
+        sig.append(p.id);
+        sig.push_back('|');
+        sig.append(p.genre);
+    }
+    return sig;
 }
 } // namespace
 
@@ -62,7 +73,14 @@ TopDetectDnaPanel::TopDetectDnaPanel(StyleScalerAudioProcessor& processor)
     status_lbl_.setFont(juce::Font(juce::FontOptions(12.5f)));
     status_lbl_.setColour(juce::Label::textColourId, Theme::textMuted);
 
-    // Center: Slot A <-> Slot B + 4 Axis Blend Sliders
+    // Center: Slot A <-> Slot B + Genre Filter + 4 Axis Blend Sliders
+    addAndMakeVisible(genre_filter_combo_);
+    genre_filter_combo_.onChange = [this]() {
+        const auto chosen = genre_filter_combo_.getText().toStdString();
+        active_genre_filter_ = chosen.empty() ? std::string("All Genres") : chosen;
+        populatePresetCombos();
+    };
+
     addAndMakeVisible(slot_a_combo_);
     slot_a_combo_.onChange = [this]() {
         const int idx = slot_a_combo_.getSelectedId() - 1;
@@ -161,43 +179,98 @@ TopDetectDnaPanel::TopDetectDnaPanel(StyleScalerAudioProcessor& processor)
     addAndMakeVisible(catalog_url_btn_);
     catalog_url_btn_.onClick = [this]() { handleEditCatalogUrl(); };
 
+    populateGenreFilter();
     populatePresetCombos();
     refreshFromProcessor();
+}
+
+void TopDetectDnaPanel::populateGenreFilter() {
+    const auto genres = processor_.getAvailableGenres();
+    genre_filter_combo_.clear(juce::dontSendNotification);
+    genre_filter_combo_.addItem("All Genres", 1);
+
+    int matchedId = 1;
+    for (size_t i = 0; i < genres.size(); ++i) {
+        const int itemId = static_cast<int>(i) + 2;
+        genre_filter_combo_.addItem(genres[i], itemId);
+        if (genres[i] == active_genre_filter_) {
+            matchedId = itemId;
+        }
+    }
+    if (matchedId == 1) {
+        active_genre_filter_ = "All Genres";
+    }
+    genre_filter_combo_.setSelectedId(matchedId, juce::dontSendNotification);
 }
 
 void TopDetectDnaPanel::populatePresetCombos() {
     const auto lib = processor_.getPresetLibrary();
     const auto snap = processor_.getSnapshot();
+    last_library_sig_ = buildLibrarySignature(lib);
 
     slot_a_combo_.clear(juce::dontSendNotification);
     slot_b_combo_.clear(juce::dontSendNotification);
 
-    int selA = 1, selB = 1;
+    const bool showAll = (active_genre_filter_.empty() || active_genre_filter_ == "All Genres");
+    std::string lastHeading;
+
     for (size_t i = 0; i < lib.size(); ++i) {
-        const int itemId = static_cast<int>(i) + 1;
-        const juce::String label = juce::String(lib[i].name) + " (" + juce::String(lib[i].genre) + ")";
+        const std::string g = lib[i].genre.empty() ? std::string("Uncategorized") : lib[i].genre;
+        if (!showAll && g != active_genre_filter_) {
+            continue;
+        }
+        if (showAll && g != lastHeading) {
+            slot_a_combo_.addSectionHeading(g);
+            slot_b_combo_.addSectionHeading(g);
+            lastHeading = g;
+        }
+        const int itemId = static_cast<int>(i) + 1; // Preserve 1-based index into processor_.getPresetLibrary()
+        const juce::String label = juce::String(lib[i].name) + " (" + juce::String(g) + ")";
         slot_a_combo_.addItem(label, itemId);
         slot_b_combo_.addItem(label, itemId);
-        if (lib[i].id == snap.slot_a.id) selA = itemId;
-        if (lib[i].id == snap.slot_b.id) selB = itemId;
     }
-    slot_a_combo_.setSelectedId(selA, juce::dontSendNotification);
-    slot_b_combo_.setSelectedId(selB, juce::dontSendNotification);
+
+    const int selA = processor_.findPresetIndexById(snap.slot_a.id) + 1;
+    const int selB = processor_.findPresetIndexById(snap.slot_b.id) + 1;
+    if (selA > 0 && slot_a_combo_.indexOfItemId(selA) >= 0) {
+        slot_a_combo_.setSelectedId(selA, juce::dontSendNotification);
+    } else {
+        slot_a_combo_.setText(juce::String(snap.slot_a.name) + " (" + juce::String(snap.slot_a.genre) + ")",
+                              juce::dontSendNotification);
+    }
+    if (selB > 0 && slot_b_combo_.indexOfItemId(selB) >= 0) {
+        slot_b_combo_.setSelectedId(selB, juce::dontSendNotification);
+    } else {
+        slot_b_combo_.setText(juce::String(snap.slot_b.name) + " (" + juce::String(snap.slot_b.genre) + ")",
+                              juce::dontSendNotification);
+    }
 }
 
 void TopDetectDnaPanel::refreshFromProcessor() {
     const auto snap = processor_.getSnapshot();
     const auto lib = processor_.getPresetLibrary();
-    if (static_cast<int>(lib.size()) != slot_a_combo_.getNumItems()) {
+    const std::string curSig = buildLibrarySignature(lib);
+    if (curSig != last_library_sig_) {
+        populateGenreFilter();
         populatePresetCombos();
     } else {
-        for (size_t i = 0; i < lib.size(); ++i) {
-            if (lib[i].id == snap.slot_a.id && slot_a_combo_.getSelectedId() != static_cast<int>(i) + 1) {
-                slot_a_combo_.setSelectedId(static_cast<int>(i) + 1, juce::dontSendNotification);
+        const int selA = processor_.findPresetIndexById(snap.slot_a.id) + 1;
+        const int selB = processor_.findPresetIndexById(snap.slot_b.id) + 1;
+        if (selA > 0 && slot_a_combo_.indexOfItemId(selA) >= 0) {
+            if (slot_a_combo_.getSelectedId() != selA) {
+                slot_a_combo_.setSelectedId(selA, juce::dontSendNotification);
             }
-            if (lib[i].id == snap.slot_b.id && slot_b_combo_.getSelectedId() != static_cast<int>(i) + 1) {
-                slot_b_combo_.setSelectedId(static_cast<int>(i) + 1, juce::dontSendNotification);
+        } else {
+            slot_a_combo_.setText(juce::String(snap.slot_a.name) + " (" + juce::String(snap.slot_a.genre) + ")",
+                                  juce::dontSendNotification);
+        }
+        if (selB > 0 && slot_b_combo_.indexOfItemId(selB) >= 0) {
+            if (slot_b_combo_.getSelectedId() != selB) {
+                slot_b_combo_.setSelectedId(selB, juce::dontSendNotification);
             }
+        } else {
+            slot_b_combo_.setText(juce::String(snap.slot_b.name) + " (" + juce::String(snap.slot_b.genre) + ")",
+                                  juce::dontSendNotification);
         }
     }
 
@@ -275,7 +348,7 @@ void TopDetectDnaPanel::paint(juce::Graphics& g) {
     };
 
     drawCard(left_card_, "1. DETECT / AUDIO-TO-MIDI", Theme::lockAmber);
-    drawCard(center_card_, "2. CROSS-GENRE STYLE DNA  (SLOT A  <->  SLOT B)", Theme::slotACyan);
+    drawCard(center_card_, "2. CROSS-GENRE STYLE DNA", Theme::slotACyan);
     drawCard(right_card_, "3. KEY / SCALE & SEED", Theme::probEmerald);
 
     // Drop zone visual box
@@ -370,6 +443,7 @@ void TopDetectDnaPanel::resized() {
 
     // --- Center Card layout ---
     {
+        genre_filter_combo_.setBounds(center_card_.getRight() - 148, center_card_.getY() + 5, 138, 20);
         auto b = center_card_.reduced(10, 8);
         b.removeFromTop(20);
         auto slotRow = b.removeFromTop(26);
@@ -468,7 +542,7 @@ void TopDetectDnaPanel::handleBrowseAudioOrMidi() {
     file_chooser_ = std::make_unique<juce::FileChooser>(
         "Select Audio or MIDI Reference",
         juce::File::getSpecialLocation(juce::File::userHomeDirectory),
-        "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3;*.mid;*.midi");
+        "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3;*.m4a;*.aac;*.mid;*.midi");
     file_chooser_->launchAsync(
         juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
         [this](const juce::FileChooser& fc) {
@@ -492,6 +566,7 @@ void TopDetectDnaPanel::handleLoadJsonProfile(bool isSlotB) {
             auto loaded = loadFromFile(file.getFullPathName().toStdString());
             if (loaded) {
                 processor_.setSlotProfile(isSlotB, *loaded, true);
+                populateGenreFilter();
                 populatePresetCombos();
                 refreshFromProcessor();
             } else {
@@ -501,9 +576,7 @@ void TopDetectDnaPanel::handleLoadJsonProfile(bool isSlotB) {
 }
 
 void TopDetectDnaPanel::handleSaveBlendedProfile() {
-    const auto userDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                             .getChildFile("StyleScaler")
-                             .getChildFile("presets");
+    const auto userDir = StyleScalerAudioProcessor::userPresetsDirectory();
     userDir.createDirectory();
     file_chooser_ = std::make_unique<juce::FileChooser>(
         "Save Blended StyleProfile JSON",
@@ -512,14 +585,21 @@ void TopDetectDnaPanel::handleSaveBlendedProfile() {
     file_chooser_->launchAsync(
         juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles |
             juce::FileBrowserComponent::warnAboutOverwriting,
-        [this](const juce::FileChooser& fc) {
+        [this, userDir](const juce::FileChooser& fc) {
             auto file = fc.getResult();
             if (file == juce::File()) return;
             if (!file.hasFileExtension(".json")) file = file.withFileExtension(".json");
             auto snap = processor_.getSnapshot();
             snap.blended.id = file.getFileNameWithoutExtension().replaceCharacter(' ', '_').toLowerCase().toStdString();
             snap.blended.name = file.getFileNameWithoutExtension().toStdString();
-            (void)saveToFile(snap.blended, file.getFullPathName().toStdString());
+            snap.blended.genre_source = "blended";
+            if (file.getParentDirectory() == userDir) {
+                (void)processor_.saveProfileToLocalDatabase(snap.blended);
+                populateGenreFilter();
+                populatePresetCombos();
+            } else {
+                (void)saveToFile(snap.blended, file.getFullPathName().toStdString());
+            }
         });
 }
 

@@ -126,3 +126,21 @@ python -m venv tools/offline_analyzer/.venv
 - **In-plugin usage**: Click **Get MuScriptor** in the top-left Detect panel to download `muscriptor-small-f16.gguf` (~209 MB, SHA-256 verified from `DamRsn/muscriptor-gguf`) into `%APPDATA%/StyleScaler/models/`, or click **Load GGUF** to point to an existing `.gguf` checkpoint (`small` / `medium` / `large`).
 - **Fallback**: When no GGUF checkpoint is present, StyleScaler automatically uses its built-in polyphonic `SpectralFallbackTranscriber` so audio drag-and-drop and live DAW capture always work immediately.
 - **Licensing**: Upstream MuScriptor GGUF model weights are distributed separately under **CC BY-NC 4.0** (non-commercial) and are **not** bundled in this repository.
+
+
+## Automatic Genre Detection & Genre Database
+
+StyleScaler extracts embedded track metadata natively across both the **VST3 / Standalone plugin** and the **offline song deconstructor (`style_deconstruct` / `deconstruct_and_publish.py`)**:
+
+- **Supported container & tag formats (zero external dependencies):**
+  - MP3: ID3v2.2 / v2.3 / v2.4 (`TCON`, `TIT2`, `TPE1`, `TALB`, `TBPM`, `TKEY`, `TXXX`, `COMM`) and ID3v1 footers (including numeric `(127)` genre codes).
+  - FLAC & Ogg/Opus: `VORBIS_COMMENT` / `OpusTags` (`GENRE`, `STYLE`, `SUBGENRE`, `BPM`, `INITIALKEY`, `ARTIST`, `ALBUM`).
+  - WAV: `RIFF LIST/INFO` (`IGNR`, `INAM`, `IART`, `IPRD`, `IBPM`/`ITMP`, `IKEY`) and embedded `id3 ` chunks.
+  - AIFF: `NAME`, `AUTH`, `ANNO`, and `ID3 ` chunks.
+  - MP4 / M4A: `ilst` atoms (`©gen`, `gnre`, `©nam`, `©ART`, `©alb`, `tmpo`, freeform keys).
+  - MIDI: SMF meta text (`Genre:`, `Style:`), Tempo (`0x51`), and Key Signature (`0x59`).
+- **Fallback chain & normalization:** Raw tags map through canonical genre aliases (e.g., `Boom Bap` -> `90s Hip-Hop`, `Neurofunk` -> `Neuro DnB`, `UKG` -> `UK Garage`). If a track has no genre tag, StyleScaler checks its enclosing folder/filename keywords (`path`) and finally infers a musical heuristic (`heuristic`) from tempo, syncopation, bass clearance, and chromaticism.
+- **Auto-Genre Corpus Mode & Catalog Index:**
+  - `style_deconstruct --mode auto-genre --input <songs_dir> --out-dir presets/styles --catalog presets/catalog.json` pools multiple songs automatically by detected genre into clean `<genre>.json` profiles.
+  - `presets/catalog.json` (and the plugin's local `%APPDATA%/StyleScaler/presets/catalog.json` database) maintains a top-level `"genres"` index plus optional `tags`, `genre_source`, and `artist` fields.
+  - Dropped songs analyzed inside the plugin are auto-tagged, persisted into the local preset database, and filterable via the **Genre Filter** dropdown and genre-grouped **Slot A / Slot B** selectors.
