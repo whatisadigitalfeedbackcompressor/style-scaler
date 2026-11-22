@@ -1,0 +1,293 @@
+#include <catch2/catch_approx.hpp>
+#include <catch2/catch_session.hpp>
+#include <catch2/catch_test_macros.hpp>
+
+#include "PluginEditor.h"
+#include "PluginProcessor.h"
+#include "engine/AudioCaptureRingBuffer.h"
+#include "engine/LockFreePatternSlot.h"
+#include "engine/MidiSequencer.h"
+#include "engine/ModelManager.h"
+#include "engine/PreviewSynth.h"
+#include "engine/TranscriptionService.h"
+
+#include <JuceHeader.h>
+#include <cmath>
+#include <filesystem>
+#include <map>
+
+#if STYLE_SCALER_HAS_MUSCRIPTOR
+#include <muscriptor/muscriptor.hpp>
+#endif
+
+using namespace style_scaler;
+using Catch::Approx;
+
+namespace {
+
+int countNoteOnMessages(const juce::MidiBuffer& buf, int channelFilter = 0) {
+    int count = 0;
+    for (const auto meta : buf) {
+        const auto m = meta.getMessage();
+        if (m.isNoteOn() && (channelFilter == 0 || m.getChannel() == channelFilter)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+} // namespace
+
+TEST_CASE("MidiSequencer sample accuracy, channel routing, rate scaling, and zero stuck notes", "[sequencer]") {
+    LockFreePatternSlot slot;
+    auto pat = std::make_unique<PatternBuffer>();
+    pat->loop_beats = 4.0;
+    pat->events = {
+        {0.0, 1.0, 60, 100, 1},
+        {0.0, 1.0, 36, 110, 3},
+        {1.0, 0.5, 72, 95, 2},
+        {3.5, 0.75, 67, 90, 1}
+    };
+    slot.publish(std::move(pat));
+
+    MidiSequencer seq;
+    seq.prepare(48000.0);
+    seq.setDawSync(false);
+    seq.setInternalBpm(120.0); // 2 beats per second -> 24000 samples per beat
+    seq.setInternalPlaying(true);
+
+    std::map<std::pair<int, int>, int> activeRefCount;
+    auto trackMidi = [&](const juce::MidiBuffer& buf) {
+        for (const auto meta : buf) {
+            const auto msg = meta.getMessage();
+            if (msg.isNoteOn()) {
+                activeRefCount[{msg.getChannel(), msg.getNoteNumber()}] += 1;
+            } else if (msg.isNoteOff()) {
+                activeRefCount[{msg.getChannel(), msg.getNoteNumber()}] -= 1;
+                CHECK(activeRefCount[{msg.getChannel(), msg.getNoteNumber()}] >= 0);
+            }
+        }
+    };
+
+    // Process 2 full loops (8 beats = 4 seconds = 192000 samples in 512-sample blocks)
+    int ch1Ons = 0, ch2Ons = 0, ch3Ons = 0;
+    for (int b = 0; b < 375; ++b) {
+        juce::MidiBuffer midi;
+        seq.processBlock(512, nullptr, slot, midi, true, true, true);
+        ch1Ons += countNoteOnMessages(midi, 1);
+        ch2Ons += countNoteOnMessages(midi, 2);
+        ch3Ons += countNoteOnMessages(midi, 3);
+        trackMidi(midi);
+    }
+    CHECK(ch1Ons >= 4);
+    CHECK(ch2Ons >= 2);
+    CHECK(ch3Ons >= 2);
+
+    // Swap PatternBuffer mid-playback and stop transport -> all active notes must receive clean Note-Offs
+    auto pat2 = std::make_unique<PatternBuffer>();
+    pat2->loop_beats = 4.0;
+    pat2->events = {{0.0, 1.0, 62, 100, 1}};
+    slot.publish(std::move(pat2));
+
+    {
+        juce::MidiBuffer midi;
+        seq.processBlock(512, nullptr, slot, midi, true, true, true);
+        trackMidi(midi);
+    }
+
+    seq.setInternalPlaying(false);
+    {
+        juce::MidiBuffer midi;
+        seq.processBlock(512, nullptr, slot, midi, true, true, true);
+        trackMidi(midi);
+    }
+    for (const auto& [key, cnt] : activeRefCount) {
+        INFO("Channel " << key.first << " Pitch " << key.second);
+        CHECK(cnt == 0);
+    }
+
+    // Verify 2x vs 0.5x rate scaling
+    auto runRateCount = [&](double scale) -> int {
+        seq.reset();
+        seq.setDawSync(false);
+        seq.setInternalBpm(120.0);
+        seq.setPlaybackRateScale(scale);
+        seq.setInternalPlaying(true);
+        int totalOns = 0;
+        for (int b = 0; b < 100; ++b) {
+            juce::MidiBuffer midi;
+            seq.processBlock(512, nullptr, slot, midi, true, true, true);
+            totalOns += countNoteOnMessages(midi);
+        }
+        return totalOns;
+    };
+    CHECK(runRateCount(2.0) > runRateCount(0.5));
+}
+
+TEST_CASE("PreviewSynth produces finite non-silent audio and decays cleanly", "[synth]") {
+    PreviewSynth synth;
+    synth.prepare(44100.0);
+
+    juce::AudioBuffer<float> buf(2, 512);
+    buf.clear();
+
+    juce::MidiBuffer onMidi;
+    onMidi.addEvent(juce::MidiMessage::noteOn(1, 60, static_cast<juce::uint8>(100)), 0);
+    onMidi.addEvent(juce::MidiMessage::noteOn(2, 72, static_cast<juce::uint8>(90)), 10);
+    onMidi.addEvent(juce::MidiMessage::noteOn(3, 36, static_cast<juce::uint8>(110)), 20);
+
+    synth.renderBlock(buf, onMidi, 0.8f, true, true, true);
+
+    float peak = 0.0f;
+    for (int ch = 0; ch < 2; ++ch) {
+        const float* ptr = buf.getReadPointer(ch);
+        for (int i = 0; i < buf.getNumSamples(); ++i) {
+            REQUIRE(std::isfinite(ptr[i]));
+            CHECK(std::abs(ptr[i]) <= 1.0f);
+            peak = std::max(peak, std::abs(ptr[i]));
+        }
+    }
+    CHECK(peak > 0.02f);
+
+    // Send Note-Offs and advance ~2 seconds to verify decay back to near silence
+    juce::MidiBuffer offMidi;
+    offMidi.addEvent(juce::MidiMessage::noteOff(1, 60), 0);
+    offMidi.addEvent(juce::MidiMessage::noteOff(2, 72), 0);
+    offMidi.addEvent(juce::MidiMessage::noteOff(3, 36), 0);
+    buf.clear();
+    synth.renderBlock(buf, offMidi, 0.8f, true, true, true);
+
+    for (int b = 0; b < 220; ++b) {
+        buf.clear();
+        juce::MidiBuffer empty;
+        synth.renderBlock(buf, empty, 0.8f, true, true, true);
+    }
+    float tailPeak = 0.0f;
+    for (int i = 0; i < buf.getNumSamples(); ++i) {
+        tailPeak = std::max(tailPeak, std::abs(buf.getSample(0, i)));
+    }
+    CHECK(tailPeak < 0.002f);
+}
+
+TEST_CASE("AudioCaptureRingBuffer + SpectralFallbackTranscriber + MidiStyleAnalyzer end-to-end", "[capture][transcription]") {
+    constexpr double kSr = 44100.0;
+    AudioCaptureRingBuffer ring(10.0);
+    ring.prepare(kSr);
+    ring.startCapture();
+    REQUIRE(ring.isCapturing());
+
+    // Synthesize 2 seconds of C minor triad (C4=60, Eb4=63, G4=67) + C2 bass (36)
+    const int totalSamples = static_cast<int>(kSr * 2.0);
+    std::vector<float> left(totalSamples, 0.0f);
+    std::vector<float> right(totalSamples, 0.0f);
+    const std::array<int, 4> pitches = {36, 60, 63, 67};
+    constexpr double kTwoPi = 6.28318530717958647692;
+    for (int i = 0; i < totalSamples; ++i) {
+        const double t = static_cast<double>(i) / kSr;
+        double sum = 0.0;
+        for (int p : pitches) {
+            const double hz = 440.0 * std::pow(2.0, (static_cast<double>(p) - 69.0) / 12.0);
+            sum += 0.20 * std::sin(kTwoPi * hz * t);
+        }
+        left[i] = static_cast<float>(sum);
+        right[i] = static_cast<float>(sum);
+    }
+
+    for (int pos = 0; pos < totalSamples; pos += 512) {
+        const int n = std::min(512, totalSamples - pos);
+        const float* ptrs[2] = {left.data() + pos, right.data() + pos};
+        ring.pushBlock(ptrs, 2, n);
+    }
+    CHECK(ring.capturedSeconds() == Approx(2.0).margin(0.05));
+
+    const auto captured = ring.extractSnapshot();
+    CHECK_FALSE(ring.isCapturing());
+    REQUIRE(captured.mono_samples.size() == static_cast<size_t>(totalSamples));
+
+    const auto mono16k = TranscriptionService::resampleTo16kMono(captured.mono_samples, captured.sample_rate);
+    REQUIRE(mono16k.size() > 16000);
+
+    const auto notes = SpectralFallbackTranscriber::transcribe(mono16k);
+    REQUIRE_FALSE(notes.empty());
+
+    AnalysisOptions opts;
+    opts.id = "synth_test";
+    opts.name = "Synth Test";
+    opts.bpm_hint = 120.0;
+    const StyleProfile prof = MidiStyleAnalyzer::analyzeTimed(notes, opts);
+    REQUIRE(validate(prof).valid);
+    CHECK(prof.harmony.tonic_pc == 0); // C
+}
+
+#if STYLE_SCALER_HAS_MUSCRIPTOR
+TEST_CASE("NeuralNote muscriptor_ggml linkage and graceful missing-file handling", "[muscriptor]") {
+    const auto devs = msl::availableDevices();
+    REQUIRE_FALSE(devs.empty());
+    bool hasCpu = false;
+    for (const auto& d : devs) {
+        if (d.backend == "CPU") hasCpu = true;
+    }
+    CHECK(hasCpu);
+
+    const auto res = msl::Transcriber::load(std::filesystem::path("C:/nonexistent_path/missing_model.gguf"));
+    REQUIRE_FALSE(res.has_value());
+    CHECK(res.error() == msl::Error::FileNotFound);
+}
+#endif
+
+TEST_CASE("StyleScalerAudioProcessor processBlock, state persistence, and MIDI export", "[processor]") {
+    StyleScalerAudioProcessor proc;
+    proc.prepareToPlay(44100.0, 512);
+    proc.setDawSync(false);
+    proc.setInternalPlaying(true);
+
+    juce::AudioBuffer<float> audio(2, 512);
+    int totalNotes = 0;
+    for (int b = 0; b < 4; ++b) {
+        juce::MidiBuffer midi;
+        audio.clear();
+        proc.processBlock(audio, midi);
+        totalNotes += countNoteOnMessages(midi);
+    }
+    CHECK(totalNotes > 0);
+
+    // State save & restore round-trip
+    proc.apvts().getParameter(ParamIDs::rhythmBlend)->setValueNotifyingHost(0.85f);
+    proc.setSlotLocked(0, true);
+    juce::MemoryBlock stateBlob;
+    proc.getStateInformation(stateBlob);
+    REQUIRE(stateBlob.getSize() > 0);
+
+    StyleScalerAudioProcessor proc2;
+    proc2.setStateInformation(stateBlob.getData(), static_cast<int>(stateBlob.getSize()));
+    CHECK(proc2.apvts().getRawParameterValue(ParamIDs::rhythmBlend)->load() == Approx(0.85f).margin(0.01f));
+    const auto snap2 = proc2.getSnapshot();
+    REQUIRE_FALSE(snap2.progression.empty());
+    CHECK(snap2.progression.front().locked == true);
+
+    // Export temp MIDI for drag-and-drop
+    const juce::File tmpMid = proc.exportTempMidiForDrag(0);
+    CHECK(tmpMid.existsAsFile());
+    CHECK(tmpMid.getSize() > 32);
+    tmpMid.deleteFile();
+}
+
+TEST_CASE("StyleScalerAudioProcessorEditor headless creation, resize, and paint", "[editor]") {
+    StyleScalerAudioProcessor proc;
+    std::unique_ptr<juce::AudioProcessorEditor> editor(proc.createEditor());
+    REQUIRE(editor != nullptr);
+
+    for (const auto& sz : std::array<std::pair<int, int>, 3>{{{960, 640}, {1160, 760}, {1440, 900}}}) {
+        editor->setSize(sz.first, sz.second);
+        juce::Image img(juce::Image::ARGB, sz.first, sz.second, true);
+        juce::Graphics g(img);
+        editor->paintEntireComponent(g, false);
+        CHECK(editor->getWidth() == sz.first);
+        CHECK(editor->getHeight() == sz.second);
+    }
+}
+
+int main(int argc, char* argv[]) {
+    juce::ScopedJuceInitialiser_GUI juceInit;
+    return Catch::Session().run(argc, argv);
+}

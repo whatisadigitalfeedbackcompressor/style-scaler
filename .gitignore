@@ -1,0 +1,35 @@
+# Build & output artifacts
+build/
+build-*/
+out/
+dist/
+cmake-build-*/
+.vs/
+
+# Python virtual environments & caches
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Model weights & generated audio/midi scratch
+*.gguf
+*.bin
+*.sf2
+*.sf3
+*.wav
+*.mp3
+*.flac
+*.mid
+!tests/fixtures/*.mid
+
+# IDE & OS clutter
+.DS_Store
+Thumbs.db
+*.user
+*.suo
+*.sln
+*.vcxproj*
+compile_commands.json

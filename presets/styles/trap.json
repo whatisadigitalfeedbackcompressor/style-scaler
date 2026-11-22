@@ -1,0 +1,218 @@
+{
+  "schema_version": 1,
+  "id": "trap",
+  "name": "Modern Dark Trap",
+  "genre": "Trap",
+  "description": "Phrygian/Aeolian sparse dark pads, deep 808 sub patterns, eerie upper bells",
+  "bpm_min": 130.0,
+  "bpm_max": 150.0,
+  "default_bpm": 140.0,
+  "time_signature": {
+    "numerator": 4,
+    "denominator": 4
+  },
+  "source": "offline_analyzer",
+  "harmony": {
+    "tonic_pc": 0,
+    "mode": "phrygian",
+    "vocabulary": [
+      {
+        "symbol": "i",
+        "degree": 1,
+        "accidental": 0,
+        "quality": "min",
+        "bass_degree_offset": 0,
+        "weight": 0.5,
+        "cadence_weight": 0.0
+      },
+      {
+        "symbol": "bVImaj7",
+        "degree": 6,
+        "accidental": -1,
+        "quality": "maj7",
+        "bass_degree_offset": 0,
+        "weight": 0.125,
+        "cadence_weight": 0.0
+      },
+      {
+        "symbol": "bVII",
+        "degree": 7,
+        "accidental": -1,
+        "quality": "maj",
+        "bass_degree_offset": 0,
+        "weight": 0.125,
+        "cadence_weight": 0.5
+      },
+      {
+        "symbol": "bII",
+        "degree": 2,
+        "accidental": -1,
+        "quality": "maj",
+        "bass_degree_offset": 0,
+        "weight": 0.125,
+        "cadence_weight": 0.0
+      },
+      {
+        "symbol": "v",
+        "degree": 5,
+        "accidental": 0,
+        "quality": "min",
+        "bass_degree_offset": 0,
+        "weight": 0.125,
+        "cadence_weight": 0.5
+      }
+    ],
+    "transitions": {
+      "i": {
+        "i": 0.001036,
+        "bVImaj7": 0.332642,
+        "bVII": 0.001036,
+        "bII": 0.332642,
+        "v": 0.332642
+      },
+      "bVImaj7": {
+        "i": 0.012223,
+        "bVImaj7": 0.000764,
+        "bVII": 0.980901,
+        "bII": 0.003056,
+        "v": 0.003056
+      },
+      "bVII": {
+        "i": 0.988686,
+        "bVImaj7": 0.003481,
+        "bVII": 0.00087,
+        "bII": 0.003481,
+        "v": 0.003481
+      },
+      "bII": {
+        "i": 0.990069,
+        "bVImaj7": 0.003056,
+        "bVII": 0.003056,
+        "bII": 0.000764,
+        "v": 0.003056
+      },
+      "v": {
+        "i": 0.988686,
+        "bVImaj7": 0.003481,
+        "bVII": 0.003481,
+        "bII": 0.003481,
+        "v": 0.00087
+      }
+    },
+    "chromaticism": 0.0557
+  },
+  "rhythm": {
+    "subdivision": 16,
+    "chord_onset_grid": [
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "melody_onset_grid": [
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.5,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "bass_onset_grid": [
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0
+    ],
+    "syncopation": 0.5,
+    "anticipation": 0.0,
+    "swing": 0.0,
+    "harmonic_pacing": 0.875,
+    "sustain_ratio": 0.7875
+  },
+  "voicing": {
+    "register_low": 45,
+    "register_high": 55,
+    "center_pitch": 51,
+    "spread_semitones": 7.5,
+    "min_notes": 3,
+    "max_notes": 4,
+    "extension_richness": 0.125,
+    "drop2_prob": 0.0,
+    "inversion_prob": 0.75,
+    "voice_leading_tightness": 0.8673,
+    "sub_bass_clearance_midi": 44,
+    "bass_register_low": 31,
+    "bass_register_high": 48
+  },
+  "melody": {
+    "interval_histogram": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.052632,
+      0.0,
+      0.0,
+      0.105263,
+      0.105263,
+      0.052632,
+      0.052632,
+      0.210526,
+      0.105263,
+      0.052632,
+      0.105263,
+      0.105263,
+      0.0,
+      0.052632,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "chord_tone_ratio": 0.4,
+    "tension_tone_ratio": 0.6,
+    "motif_density": 0.3125,
+    "motif_repetition": 0.8684,
+    "arch_contour": 0.5,
+    "register_low": 72,
+    "register_high": 79,
+    "legato_ratio": 0.4579
+  }
+}
