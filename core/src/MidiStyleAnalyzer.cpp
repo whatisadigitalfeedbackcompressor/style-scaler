@@ -762,4 +762,192 @@ StyleProfile MidiStyleAnalyzer::analyze(const std::vector<NoteEvent>& rawEvents,
     return profile;
 }
 
+StyleProfile MidiStyleAnalyzer::analyzeCorpus(const std::vector<SongInput>& songs,
+                                              const AnalysisOptions& options) {
+    std::vector<StyleProfile> perSong;
+    std::vector<double> bpms;
+    for (const auto& s : songs) {
+        if (s.notes.empty()) continue;
+        AnalysisOptions songOpts = options;
+        songOpts.time_sig_num = s.time_sig_num;
+        songOpts.time_sig_den = s.time_sig_den;
+        const double b = s.bpm > 20.0 ? s.bpm : (options.bpm_hint > 20.0 ? options.bpm_hint : 120.0);
+        perSong.push_back(analyze(s.notes, b, songOpts));
+        bpms.push_back(b);
+    }
+
+    if (perSong.empty()) {
+        StyleProfile def = makeDefaultStyleProfile();
+        if (!options.id.empty()) def.id = options.id;
+        if (!options.name.empty()) def.name = options.name;
+        if (!options.genre.empty()) def.genre = options.genre;
+        if (!options.source.empty()) def.source = options.source;
+        return def;
+    }
+    if (perSong.size() == 1) {
+        return perSong.front();
+    }
+
+    StyleProfile out = perSong.front();
+    const double n = static_cast<double>(perSong.size());
+    std::sort(bpms.begin(), bpms.end());
+    out.default_bpm = bpms[bpms.size() / 2];
+    out.bpm_min = std::clamp(bpms.front() - 4.0, 40.0, out.default_bpm);
+    out.bpm_max = std::clamp(bpms.back() + 4.0, out.default_bpm, 240.0);
+
+    // Harmony: pool Roman vocabulary and transitions across songs
+    std::map<std::string, ChordVocabEntry> vocabMap;
+    std::map<std::string, std::map<std::string, double>> transAccum;
+    std::map<Mode, int> modeCounts;
+    double chromSum = 0.0;
+
+    for (const auto& sp : perSong) {
+        modeCounts[sp.harmony.mode] += 1;
+        chromSum += sp.harmony.chromaticism;
+        for (const auto& v : sp.harmony.vocabulary) {
+            auto& dst = vocabMap[v.symbol];
+            dst.symbol = v.symbol;
+            dst.chord = v.chord;
+            dst.weight += v.weight;
+            dst.cadence_weight += v.cadence_weight;
+        }
+        for (const auto& [fromSym, row] : sp.harmony.transitions) {
+            for (const auto& [toSym, p] : row) {
+                transAccum[fromSym][toSym] += p;
+            }
+        }
+    }
+
+    if (options.mode_override.has_value()) {
+        out.harmony.mode = *options.mode_override;
+    } else {
+        int bestModeCount = -1;
+        for (const auto& [m, cnt] : modeCounts) {
+            if (cnt > bestModeCount) {
+                bestModeCount = cnt;
+                out.harmony.mode = m;
+            }
+        }
+    }
+    if (options.key_override_pc.has_value()) {
+        out.harmony.tonic_pc = normalizePitchClass(*options.key_override_pc);
+    }
+    out.harmony.chromaticism = std::clamp(chromSum / n, 0.0, 1.0);
+
+    out.harmony.vocabulary.clear();
+    for (const auto& [sym, entry] : vocabMap) {
+        out.harmony.vocabulary.push_back(entry);
+    }
+    std::sort(out.harmony.vocabulary.begin(), out.harmony.vocabulary.end(),
+              [](const ChordVocabEntry& a, const ChordVocabEntry& b) { return a.weight > b.weight; });
+
+    out.harmony.transitions.clear();
+    for (const auto& fromEntry : out.harmony.vocabulary) {
+        std::map<std::string, double> row;
+        const auto it = transAccum.find(fromEntry.symbol);
+        for (const auto& toEntry : out.harmony.vocabulary) {
+            double val = 0.02 * toEntry.weight;
+            if (it != transAccum.end()) {
+                if (auto jt = it->second.find(toEntry.symbol); jt != it->second.end()) {
+                    val += jt->second;
+                }
+            }
+            row[toEntry.symbol] = val;
+        }
+        out.harmony.transitions[fromEntry.symbol] = std::move(row);
+    }
+
+    // Rhythm pooling
+    std::array<double, 16> cg{}, mg{}, bg{};
+    double syncSum = 0.0, antSum = 0.0, swingSum = 0.0, paceSum = 0.0, sustSum = 0.0;
+    for (const auto& sp : perSong) {
+        for (size_t i = 0; i < 16; ++i) {
+            cg[i] += sp.rhythm.chord_onset_grid[i];
+            mg[i] += sp.rhythm.melody_onset_grid[i];
+            bg[i] += sp.rhythm.bass_onset_grid[i];
+        }
+        syncSum += sp.rhythm.syncopation;
+        antSum += sp.rhythm.anticipation;
+        swingSum += sp.rhythm.swing;
+        paceSum += sp.rhythm.harmonic_pacing;
+        sustSum += sp.rhythm.sustain_ratio;
+    }
+    const auto defR = makeDefaultStyleProfile().rhythm;
+    normalizeGridMax(cg, defR.chord_onset_grid);
+    normalizeGridMax(mg, defR.melody_onset_grid);
+    normalizeGridMax(bg, defR.bass_onset_grid);
+    out.rhythm.chord_onset_grid = cg;
+    out.rhythm.melody_onset_grid = mg;
+    out.rhythm.bass_onset_grid = bg;
+    out.rhythm.syncopation = std::clamp(syncSum / n, 0.0, 1.0);
+    out.rhythm.anticipation = std::clamp(antSum / n, 0.0, 1.0);
+    out.rhythm.swing = std::clamp(swingSum / n, 0.0, 1.0);
+    out.rhythm.harmonic_pacing = std::clamp(paceSum / n, 0.25, 4.0);
+    out.rhythm.sustain_ratio = std::clamp(sustSum / n, 0.2, 1.15);
+
+    // Voicing pooling
+    double regLo = 0.0, regHi = 0.0, cent = 0.0, spread = 0.0;
+    double ext = 0.0, drop2 = 0.0, inv = 0.0, vl = 0.0, clear = 0.0;
+    double bLo = 0.0, bHi = 0.0;
+    int minN = 6, maxN = 1;
+    for (const auto& sp : perSong) {
+        regLo += sp.voicing.register_low;
+        regHi += sp.voicing.register_high;
+        cent += sp.voicing.center_pitch;
+        spread += sp.voicing.spread_semitones;
+        ext += sp.voicing.extension_richness;
+        drop2 += sp.voicing.drop2_prob;
+        inv += sp.voicing.inversion_prob;
+        vl += sp.voicing.voice_leading_tightness;
+        clear += sp.voicing.sub_bass_clearance_midi;
+        bLo += sp.voicing.bass_register_low;
+        bHi += sp.voicing.bass_register_high;
+        minN = std::min(minN, sp.voicing.min_notes);
+        maxN = std::max(maxN, sp.voicing.max_notes);
+    }
+    out.voicing.register_low = std::clamp(static_cast<int>(std::llround(regLo / n)), 36, 72);
+    out.voicing.register_high = std::clamp(static_cast<int>(std::llround(regHi / n)), out.voicing.register_low + 8, 96);
+    out.voicing.center_pitch = std::clamp(static_cast<int>(std::llround(cent / n)),
+                                          out.voicing.register_low, out.voicing.register_high);
+    out.voicing.spread_semitones = std::clamp(spread / n, 5.0, 30.0);
+    out.voicing.min_notes = std::clamp(minN, 2, 5);
+    out.voicing.max_notes = std::clamp(maxN, out.voicing.min_notes, 6);
+    out.voicing.extension_richness = std::clamp(ext / n, 0.0, 1.0);
+    out.voicing.drop2_prob = std::clamp(drop2 / n, 0.0, 1.0);
+    out.voicing.inversion_prob = std::clamp(inv / n, 0.0, 1.0);
+    out.voicing.voice_leading_tightness = std::clamp(vl / n, 0.1, 0.98);
+    out.voicing.sub_bass_clearance_midi = std::clamp(
+        static_cast<int>(std::llround(clear / n)), 36, std::min(60, out.voicing.register_high - 6));
+    out.voicing.bass_register_low = std::clamp(static_cast<int>(std::llround(bLo / n)), 21, 50);
+    out.voicing.bass_register_high = std::clamp(static_cast<int>(std::llround(bHi / n)),
+                                                out.voicing.bass_register_low + 5, 58);
+
+    // Melody pooling
+    std::array<double, 25> hist{};
+    double ct = 0.0, tt = 0.0, md = 0.0, mr = 0.0, ac = 0.0, leg = 0.0, mLo = 0.0, mHi = 0.0;
+    for (const auto& sp : perSong) {
+        for (size_t i = 0; i < 25; ++i) hist[i] += sp.melody.interval_histogram[i];
+        ct += sp.melody.chord_tone_ratio;
+        tt += sp.melody.tension_tone_ratio;
+        md += sp.melody.motif_density;
+        mr += sp.melody.motif_repetition;
+        ac += sp.melody.arch_contour;
+        leg += sp.melody.legato_ratio;
+        mLo += sp.melody.register_low;
+        mHi += sp.melody.register_high;
+    }
+    out.melody.interval_histogram = hist;
+    out.melody.chord_tone_ratio = std::clamp(ct / n, 0.15, 0.95);
+    out.melody.tension_tone_ratio = std::clamp(tt / n, 0.02, 0.65);
+    out.melody.motif_density = std::clamp(md / n, 0.1, 1.0);
+    out.melody.motif_repetition = std::clamp(mr / n, 0.1, 0.95);
+    out.melody.arch_contour = std::clamp(ac / n, 0.1, 0.9);
+    out.melody.legato_ratio = std::clamp(leg / n, 0.15, 1.0);
+    out.melody.register_low = std::clamp(static_cast<int>(std::llround(mLo / n)), 48, 84);
+    out.melody.register_high = std::clamp(static_cast<int>(std::llround(mHi / n)), out.melody.register_low + 7, 108);
+
+    normalizeProfileDistributions(out);
+    return out;
+}
+
 } // namespace style_scaler

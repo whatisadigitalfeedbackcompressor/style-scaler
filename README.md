@@ -33,7 +33,7 @@ CMake fetches `nlohmann/json`, `Catch2`, `JUCE 8.0.15`, and `DamRsn/muscriptor.c
 
 ```powershell
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64 "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
-cmake --build build --config Release --target style_core style_cli style_tests style_plugin_tests StyleScaler_VST3 StyleScaler_Standalone --parallel
+cmake --build build --config Release --target style_core style_cli style_deconstruct style_tests style_plugin_tests StyleScaler_VST3 StyleScaler_Standalone --parallel
 ctest --test-dir build -C Release --output-on-failure
 ```
 
@@ -42,10 +42,40 @@ To reuse an existing local JUCE 8 checkout:
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DJUCE_DIR=C:/path/to/JUCE
 ```
 
-Built plugin artifacts appear in:
+Built plugin & tool artifacts appear in:
 - `build/StyleScaler_artefacts/Release/VST3/StyleScaler.vst3`
 - `build/StyleScaler_artefacts/Release/Standalone/StyleScaler.exe`
 - `build/Release/style_cli.exe`
+- `build/style_deconstruct_artefacts/Release/style_deconstruct.exe`
+
+---
+
+## Offline Song Deconstruction → GitHub Catalog → In-Plugin Sync
+
+You can analyze entire folders of `.mp3`, `.wav`, `.flac`, `.ogg`, `.aif`, or `.mid` reference tracks offline (using NeuralNote `muscriptor.cpp` or fast spectral fallback), publish them into `presets/catalog.json`, and pull updates inside the plugin with one click:
+
+1. **Deconstruct songs offline & rebuild `presets/catalog.json`:**
+```powershell
+# First-time setup: optionally download MuScriptor small GGUF (~209 MB) once and deconstruct a folder of genre subfolders
+.\dist\style_deconstruct.exe `
+  --input C:\Music\ReferenceFolders `
+  --mode per-folder `
+  --out-dir presets/styles `
+  --catalog presets/catalog.json `
+  --download-model
+```
+Or use the Python orchestrator (which runs `style_deconstruct.exe`, updates `presets/catalog.json` with SHA-256 digests, and optionally commits & pushes to GitHub with `--push`):
+```powershell
+.\tools\offline_analyzer\.venv\Scripts\python tools/offline_analyzer/deconstruct_and_publish.py `
+  --input C:\Music\ReferenceFolders `
+  --mode per-folder `
+  --push
+```
+*(Pass `--spectral` to skip downloading GGUF weights and run fast polyphonic spectral analysis instead.)*
+
+2. **Sync inside the StyleScaler VST3 / Standalone plugin:**
+   - Click **Sync GitHub** in the top-right Key/Seed panel (or click **URL** to point at your own GitHub raw `catalog.json` URL or local shared folder path).
+   - StyleScaler fetches `catalog.json`, SHA-256-verifies any new or updated presets into `%APPDATA%/StyleScaler/presets/`, and refreshes **Slot A** and **Slot B** dropdowns immediately without restarting your DAW.
 
 ---
 

@@ -30,6 +30,7 @@ private:
     void handleLoadJsonProfile(bool isSlotB);
     void handleSaveBlendedProfile();
     void handleLoadCustomGguf();
+    void handleEditCatalogUrl();
 
     StyleScalerAudioProcessor& processor_;
     bool drag_hover_ = false;
@@ -74,6 +75,8 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> key_mode_att_;
     juce::TextButton regen_btn_{"Regenerate"};
     juce::TextButton lock_seed_btn_{"Lock Seed"};
+    juce::TextButton sync_github_btn_{"Sync GitHub"};
+    juce::TextButton catalog_url_btn_{"URL"};
     juce::Label key_info_lbl_;
     juce::Label seed_lbl_;
 

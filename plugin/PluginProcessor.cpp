@@ -126,6 +126,7 @@ StyleScalerAudioProcessor::StyleScalerAudioProcessor()
 
 StyleScalerAudioProcessor::~StyleScalerAudioProcessor() {
     cancelPendingUpdate();
+    catalog_sync_.cancel();
     transcription_service_.cancel();
     regen_pool_.removeAllJobs(true, 4000);
     for (const char* pid : {
@@ -666,6 +667,54 @@ void StyleScalerAudioProcessor::stopAndAnalyzeCapture(TranscriptionService::Targ
 StyleScalerAudioProcessor::TranscriptionStatus StyleScalerAudioProcessor::getTranscriptionStatus() const {
     std::lock_guard<std::mutex> slk(status_mutex_);
     return tx_status_;
+}
+
+void StyleScalerAudioProcessor::reloadPresetLibrary() {
+    loadBundledAndUserPresets();
+    {
+        std::lock_guard<std::mutex> lk(state_mutex_);
+        for (const auto& p : preset_library_) {
+            if (p.id == slot_a_.id) slot_a_ = p;
+            if (p.id == slot_b_.id) slot_b_ = p;
+        }
+    }
+    if (onStateChangedForUI) {
+        onStateChangedForUI();
+    }
+}
+
+void StyleScalerAudioProcessor::syncRemotePresetsAsync() {
+    {
+        std::lock_guard<std::mutex> slk(status_mutex_);
+        sync_status_ = TranscriptionStatus{true, 0.02f, "Syncing presets from catalog...", "Catalog"};
+        tx_status_ = sync_status_;
+    }
+
+    catalog_sync_.syncAsync(
+        [this](float prog, std::string msg) {
+            std::lock_guard<std::mutex> slk(status_mutex_);
+            sync_status_.running = true;
+            sync_status_.progress = prog;
+            sync_status_.message = msg;
+            tx_status_ = sync_status_;
+        },
+        [this](PresetCatalogSync::SyncResult res) {
+            {
+                std::lock_guard<std::mutex> slk(status_mutex_);
+                sync_status_.running = false;
+                sync_status_.progress = res.success ? 1.0f : 0.0f;
+                sync_status_.message = res.message;
+                tx_status_ = sync_status_;
+            }
+            if (res.downloaded > 0 || res.success) {
+                reloadPresetLibrary();
+            }
+        });
+}
+
+StyleScalerAudioProcessor::TranscriptionStatus StyleScalerAudioProcessor::getCatalogSyncStatus() const {
+    std::lock_guard<std::mutex> slk(status_mutex_);
+    return sync_status_;
 }
 
 bool StyleScalerAudioProcessor::exportMidiToFile(const juce::File& destFile,

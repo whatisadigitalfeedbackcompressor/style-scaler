@@ -30,84 +30,21 @@ public:
             }
         };
 
-        notify(DownloadState::Downloading, 0.0f, "");
-        target_file_.getParentDirectory().createDirectory();
-        const juce::File tempFile = target_file_.getSiblingFile(target_file_.getFileName() + ".part");
-        tempFile.deleteFile();
+        std::string err;
+        const bool ok = owner_.downloadDefaultModelBlocking(
+            [&](DownloadState s, float prog) {
+                notify(s, prog, "");
+                return !threadShouldExit() && !owner_.cancel_requested_.load(std::memory_order_acquire);
+            },
+            err);
 
-        const juce::URL url(manifest_.download_url);
-        int statusCode = 0;
-        auto stream = url.createInputStream(
-            juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
-                .withConnectionTimeoutMs(15000)
-                .withNumRedirectsToFollow(5)
-                .withStatusCode(&statusCode));
-
-        if (!stream || (statusCode >= 400)) {
-            notify(DownloadState::Failed, 0.0f,
-                   "HTTP download failed (status " + std::to_string(statusCode) + ")");
-            return;
-        }
-
-        {
-            juce::FileOutputStream out(tempFile);
-            if (!out.openedOk()) {
-                notify(DownloadState::Failed, 0.0f, "Could not write temporary model file");
-                return;
-            }
-
-            std::array<char, 65536> buf{};
-            std::int64_t totalRead = 0;
-            const std::int64_t contentLen = stream->getTotalLength() > 0
-                                                ? stream->getTotalLength()
-                                                : manifest_.expected_bytes;
-
-            while (!threadShouldExit() && !owner_.cancel_requested_.load(std::memory_order_acquire)) {
-                const int n = stream->read(buf.data(), static_cast<int>(buf.size()));
-                if (n <= 0) break;
-                if (!out.write(buf.data(), static_cast<size_t>(n))) {
-                    notify(DownloadState::Failed, 0.0f, "Disk write error while downloading GGUF");
-                    tempFile.deleteFile();
-                    return;
-                }
-                totalRead += n;
-                const float frac = contentLen > 0
-                                       ? std::clamp(static_cast<float>(totalRead) / static_cast<float>(contentLen), 0.0f, 0.99f)
-                                       : 0.5f;
-                owner_.progress_.store(frac, std::memory_order_relaxed);
-                if (callback_) {
-                    auto cb = callback_;
-                    juce::MessageManager::callAsync([cb, frac]() {
-                        cb(DownloadState::Downloading, frac, "");
-                    });
-                }
-            }
-            out.flush();
-        }
-
-        if (threadShouldExit() || owner_.cancel_requested_.load(std::memory_order_acquire)) {
-            tempFile.deleteFile();
+        if (ok) {
+            notify(DownloadState::Ready, 1.0f, "");
+        } else if (err == "Cancelled") {
             notify(DownloadState::Idle, 0.0f, "Download cancelled");
-            return;
+        } else {
+            notify(DownloadState::Failed, 0.0f, err);
         }
-
-        notify(DownloadState::Verifying, 0.99f, "");
-        const juce::SHA256 sha(tempFile);
-        const juce::String hex = sha.toHexString();
-        if (!hex.equalsIgnoreCase(manifest_.sha256_hex)) {
-            tempFile.deleteFile();
-            notify(DownloadState::Failed, 0.0f,
-                   "SHA-256 verification failed for downloaded checkpoint");
-            return;
-        }
-
-        if (!tempFile.moveFileTo(target_file_)) {
-            tempFile.deleteFile();
-            notify(DownloadState::Failed, 0.0f, "Failed moving verified model into models folder");
-            return;
-        }
-
-        notify(DownloadState::Ready, 1.0f, "");
     }
 
 private:
@@ -116,6 +53,91 @@ private:
     ModelManifestInfo manifest_;
     std::function<void(DownloadState, float, std::string)> callback_;
 };
+
+bool ModelManager::downloadDefaultModelBlocking(const std::function<bool(DownloadState, float)>& onProgress,
+                                                std::string& outError) {
+    const auto manifest = defaultManifest();
+    const auto targetFile = defaultModelsDirectory().getChildFile(manifest.file_name);
+
+    if (onProgress && !onProgress(DownloadState::Downloading, 0.0f)) {
+        outError = "Cancelled";
+        return false;
+    }
+
+    targetFile.getParentDirectory().createDirectory();
+    const juce::File tempFile = targetFile.getSiblingFile(targetFile.getFileName() + ".part");
+    tempFile.deleteFile();
+
+    const juce::URL url(manifest.download_url);
+    int statusCode = 0;
+    auto stream = url.createInputStream(
+        juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
+            .withConnectionTimeoutMs(15000)
+            .withNumRedirectsToFollow(5)
+            .withStatusCode(&statusCode));
+
+    if (!stream || statusCode >= 400) {
+        outError = "HTTP download failed (status " + std::to_string(statusCode) + ")";
+        return false;
+    }
+
+    {
+        juce::FileOutputStream out(tempFile);
+        if (!out.openedOk()) {
+            outError = "Could not write temporary model file";
+            return false;
+        }
+
+        std::array<char, 65536> buf{};
+        std::int64_t totalRead = 0;
+        const std::int64_t contentLen = stream->getTotalLength() > 0
+                                            ? stream->getTotalLength()
+                                            : manifest.expected_bytes;
+
+        while (true) {
+            if (onProgress && !onProgress(DownloadState::Downloading,
+                                          contentLen > 0
+                                              ? std::clamp(static_cast<float>(totalRead) / static_cast<float>(contentLen), 0.0f, 0.99f)
+                                              : 0.5f)) {
+                tempFile.deleteFile();
+                outError = "Cancelled";
+                return false;
+            }
+            const int n = stream->read(buf.data(), static_cast<int>(buf.size()));
+            if (n <= 0) break;
+            if (!out.write(buf.data(), static_cast<size_t>(n))) {
+                tempFile.deleteFile();
+                outError = "Disk write error while downloading GGUF";
+                return false;
+            }
+            totalRead += n;
+        }
+        out.flush();
+    }
+
+    if (onProgress && !onProgress(DownloadState::Verifying, 0.99f)) {
+        tempFile.deleteFile();
+        outError = "Cancelled";
+        return false;
+    }
+
+    const juce::SHA256 sha(tempFile);
+    if (!sha.toHexString().equalsIgnoreCase(manifest.sha256_hex)) {
+        tempFile.deleteFile();
+        outError = "SHA-256 verification failed for downloaded checkpoint";
+        return false;
+    }
+
+    if (!tempFile.moveFileTo(targetFile)) {
+        tempFile.deleteFile();
+        outError = "Failed moving verified model into models folder";
+        return false;
+    }
+
+    state_.store(DownloadState::Ready, std::memory_order_release);
+    progress_.store(1.0f, std::memory_order_relaxed);
+    return true;
+}
 
 ModelManager::ModelManager() {
     const auto def = defaultModelsDirectory().getChildFile(defaultManifest().file_name);

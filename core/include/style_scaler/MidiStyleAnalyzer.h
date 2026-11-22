@@ -21,6 +21,13 @@ struct AnalysisOptions {
     std::optional<Mode> mode_override;
 };
 
+struct SongInput {
+    std::vector<NoteEvent> notes;
+    double bpm = 120.0;
+    int time_sig_num = 4;
+    int time_sig_den = 4;
+};
+
 class MidiStyleAnalyzer {
 public:
     static double estimateBpm(const std::vector<TimedNoteSec>& notes);
@@ -31,6 +38,9 @@ public:
 
     static StyleProfile analyzeTimed(const std::vector<TimedNoteSec>& notes,
                                      const AnalysisOptions& options = {});
+
+    static StyleProfile analyzeCorpus(const std::vector<SongInput>& songs,
+                                      const AnalysisOptions& options = {});
 };
 
 } // namespace style_scaler

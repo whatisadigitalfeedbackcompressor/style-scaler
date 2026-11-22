@@ -25,14 +25,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r tools/offline_analyzer/requirements.txt
           python tools/offline_analyzer/build_starter_presets.py
+          python tools/offline_analyzer/build_catalog.py
 
       - name: Configure CMake (JUCE 8 + muscriptor.cpp)
         run: |
           cmake -S . -B build -G "Visual Studio 17 2022" -A x64 "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" -DSTYLE_SCALER_BUILD_PLUGIN=ON -DSTYLE_SCALER_ENABLE_MUSCRIPTOR=ON
 
-      - name: Build VST3, Standalone, CLI, and Tests (Release)
+      - name: Build VST3, Standalone, CLIs, and Tests (Release)
         run: |
-          cmake --build build --config Release --target style_core style_cli style_tests style_plugin_tests StyleScaler_VST3 StyleScaler_Standalone --parallel
+          cmake --build build --config Release --target style_core style_cli style_deconstruct style_tests style_plugin_tests StyleScaler_VST3 StyleScaler_Standalone --parallel
 
       - name: Run CTest suite
         run: |
@@ -45,6 +46,7 @@ jobs:
           Copy-Item -Recurse -Force "build/StyleScaler_artefacts/Release/VST3/StyleScaler.vst3" "dist/StyleScaler.vst3"
           Copy-Item -Force "build/StyleScaler_artefacts/Release/Standalone/StyleScaler.exe" "dist/StyleScaler.exe"
           Copy-Item -Force "build/Release/style_cli.exe" "dist/style_cli.exe"
+          Copy-Item -Force "build/style_deconstruct_artefacts/Release/style_deconstruct.exe" "dist/style_deconstruct.exe"
 
       - name: Upload StyleScaler Windows build
         uses: actions/upload-artifact@v4

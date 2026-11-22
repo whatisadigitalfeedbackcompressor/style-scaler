@@ -87,6 +87,7 @@ void StyleScalerAudioProcessorEditor::timerCallback() {
     content_root_.perform_bar.updateLiveState();
     if (processor_.isCapturingAudio() ||
         processor_.transcriptionService().isRunning() ||
+        processor_.isCatalogSyncRunning() ||
         processor_.modelManager().getDownloadState() == ModelManager::DownloadState::Downloading ||
         processor_.modelManager().getDownloadState() == ModelManager::DownloadState::Verifying) {
         content_root_.top_panel.refreshFromProcessor();

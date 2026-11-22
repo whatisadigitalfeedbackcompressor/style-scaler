@@ -223,6 +223,39 @@ if(STYLE_SCALER_BUILD_PLUGIN AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/plugin/Plug
         target_link_libraries(StyleScaler PRIVATE muscriptor_ggml)
     endif()
 
+    if(STYLE_SCALER_BUILD_CLI AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cli/deconstruct_main.cpp")
+        juce_add_console_app(style_deconstruct
+            PRODUCT_NAME "style_deconstruct"
+        )
+        juce_generate_juce_header(style_deconstruct)
+        target_sources(style_deconstruct PRIVATE
+            cli/deconstruct_main.cpp
+            plugin/engine/ModelManager.cpp
+            plugin/engine/TranscriptionService.cpp
+        )
+        target_include_directories(style_deconstruct PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/plugin")
+        target_compile_definitions(style_deconstruct PRIVATE
+            JUCE_WEB_BROWSER=0
+            JUCE_USE_CURL=0
+            STYLE_SCALER_HAS_MUSCRIPTOR=${STYLE_SCALER_HAS_MUSCRIPTOR}
+        )
+        if(MSVC)
+            target_compile_options(style_deconstruct PRIVATE /W4 /utf-8 /wd4100 /wd4244 /wd4267 /wd4458)
+        else()
+            target_compile_options(style_deconstruct PRIVATE -Wall -Wextra)
+        endif()
+        target_link_libraries(style_deconstruct PRIVATE
+            style_core
+            juce::juce_audio_utils
+            juce::juce_cryptography
+            juce::juce_dsp
+            juce::juce_recommended_config_flags
+        )
+        if(STYLE_SCALER_HAS_MUSCRIPTOR)
+            target_link_libraries(style_deconstruct PRIVATE muscriptor_ggml)
+        endif()
+    endif()
+
     if(STYLE_SCALER_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/plugin_tests.cpp")
         juce_add_console_app(style_plugin_tests
             PRODUCT_NAME "style_plugin_tests"

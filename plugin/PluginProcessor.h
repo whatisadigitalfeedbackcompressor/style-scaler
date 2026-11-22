@@ -4,6 +4,7 @@
 #include "engine/LockFreePatternSlot.h"
 #include "engine/MidiSequencer.h"
 #include "engine/ModelManager.h"
+#include "engine/PresetCatalogSync.h"
 #include "engine/PreviewSynth.h"
 #include "engine/TranscriptionService.h"
 
@@ -145,6 +146,14 @@ public:
     };
     TranscriptionStatus getTranscriptionStatus() const;
 
+    // --- GitHub / Remote Preset Catalog Sync ---
+    void reloadPresetLibrary();
+    void syncRemotePresetsAsync();
+    bool isCatalogSyncRunning() const noexcept { return catalog_sync_.isRunning(); }
+    std::string getCatalogUrl() const { return catalog_sync_.getCatalogUrl(); }
+    void setCatalogUrl(const std::string& url) { catalog_sync_.setCatalogUrl(url); }
+    TranscriptionStatus getCatalogSyncStatus() const;
+
     // --- MIDI Export (Ch 1/2/3/Full) ---
     bool exportMidiToFile(const juce::File& destFile, int channelFilter, std::string& outError) const;
     juce::File exportTempMidiForDrag(int channelFilter) const;
@@ -206,9 +215,11 @@ private:
     AudioCaptureRingBuffer capture_ring_{30.0};
     ModelManager model_manager_;
     TranscriptionService transcription_service_{model_manager_};
+    PresetCatalogSync catalog_sync_;
 
     mutable std::mutex status_mutex_;
     TranscriptionStatus tx_status_;
+    TranscriptionStatus sync_status_;
 
     std::atomic<int> editor_width_{580};
     std::atomic<int> editor_height_{380};

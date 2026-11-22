@@ -151,6 +151,16 @@ TopDetectDnaPanel::TopDetectDnaPanel(StyleScalerAudioProcessor& processor)
     seed_lbl_.setFont(juce::Font(juce::FontOptions(12.5f)));
     seed_lbl_.setColour(juce::Label::textColourId, Theme::textMuted);
 
+    addAndMakeVisible(sync_github_btn_);
+    sync_github_btn_.setColour(juce::TextButton::buttonColourId, Theme::probEmerald.withAlpha(0.22f));
+    sync_github_btn_.onClick = [this]() {
+        processor_.syncRemotePresetsAsync();
+        refreshFromProcessor();
+    };
+
+    addAndMakeVisible(catalog_url_btn_);
+    catalog_url_btn_.onClick = [this]() { handleEditCatalogUrl(); };
+
     populatePresetCombos();
     refreshFromProcessor();
 }
@@ -244,6 +254,10 @@ void TopDetectDnaPanel::refreshFromProcessor() {
     lock_seed_btn_.setToggleState(processor_.isSeedLocked(), juce::dontSendNotification);
     seed_lbl_.setText("Seed: " + juce::String(static_cast<juce::int64>(snap.seed & 0xFFFFFFFFULL)),
                       juce::dontSendNotification);
+
+    const bool syncing = processor_.isCatalogSyncRunning();
+    sync_github_btn_.setButtonText(syncing ? "Syncing..." : "Sync GitHub");
+    sync_github_btn_.setEnabled(!syncing);
 
     repaint();
 }
@@ -397,22 +411,28 @@ void TopDetectDnaPanel::resized() {
     {
         auto b = right_card_.reduced(10, 8);
         b.removeFromTop(20);
-        key_info_lbl_.setBounds(b.removeFromTop(22));
-        b.removeFromTop(6);
+        key_info_lbl_.setBounds(b.removeFromTop(20));
+        b.removeFromTop(4);
 
-        auto keyRow = b.removeFromTop(26);
-        key_root_combo_.setBounds(keyRow.removeFromLeft(66));
+        auto keyRow = b.removeFromTop(24);
+        key_root_combo_.setBounds(keyRow.removeFromLeft(64));
         keyRow.removeFromLeft(6);
         key_mode_combo_.setBounds(keyRow);
 
-        b.removeFromTop(10);
-        auto regenRow = b.removeFromTop(28);
+        b.removeFromTop(6);
+        auto regenRow = b.removeFromTop(26);
         regen_btn_.setBounds(regenRow.removeFromLeft(regenRow.getWidth() - 88));
         regenRow.removeFromLeft(6);
         lock_seed_btn_.setBounds(regenRow);
 
-        b.removeFromTop(6);
-        seed_lbl_.setBounds(b.removeFromTop(18));
+        b.removeFromTop(5);
+        seed_lbl_.setBounds(b.removeFromTop(17));
+
+        b.removeFromTop(5);
+        auto syncRow = b.removeFromTop(24);
+        catalog_url_btn_.setBounds(syncRow.removeFromRight(46));
+        syncRow.removeFromRight(5);
+        sync_github_btn_.setBounds(syncRow);
     }
 }
 
@@ -519,6 +539,33 @@ void TopDetectDnaPanel::handleLoadCustomGguf() {
             }
             refreshFromProcessor();
         });
+}
+
+void TopDetectDnaPanel::handleEditCatalogUrl() {
+    auto* aw = new juce::AlertWindow(
+        "Preset Catalog URL",
+        "Enter a GitHub raw catalog.json URL or local catalog.json path:",
+        juce::MessageBoxIconType::NoIcon);
+    aw->addTextEditor("url", processor_.getCatalogUrl());
+    aw->addButton("Save & Sync", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    aw->addButton("Reset Default", 2);
+    aw->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+    juce::Component::SafePointer<TopDetectDnaPanel> safeThis(this);
+    aw->enterModalState(
+        true,
+        juce::ModalCallbackFunction::create([safeThis, aw](int result) {
+            if (safeThis == nullptr) return;
+            if (result == 1) {
+                safeThis->processor_.setCatalogUrl(aw->getTextEditorContents("url").trim().toStdString());
+                safeThis->processor_.syncRemotePresetsAsync();
+                safeThis->refreshFromProcessor();
+            } else if (result == 2) {
+                safeThis->processor_.setCatalogUrl(PresetCatalogSync::kDefaultCatalogUrl);
+                safeThis->refreshFromProcessor();
+            }
+        }),
+        true);
 }
 
 } // namespace style_scaler::ui

@@ -40,6 +40,8 @@ public:
     };
 
     void startDownloadAsync(std::function<void(DownloadState, float, std::string)> onUpdate = {});
+    bool downloadDefaultModelBlocking(const std::function<bool(DownloadState, float)>& onProgress,
+                                      std::string& outError);
     void cancelDownload();
 
     DownloadState getDownloadState() const noexcept { return state_.load(std::memory_order_acquire); }

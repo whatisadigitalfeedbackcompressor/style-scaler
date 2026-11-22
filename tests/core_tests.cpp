@@ -250,3 +250,33 @@ TEST_CASE("SmfWriter/SmfReader round-trip and MidiStyleAnalyzer recovery", "[smf
     std::error_code ec;
     fs::remove(tmpMid, ec);
 }
+
+TEST_CASE("MidiStyleAnalyzer::analyzeCorpus pools multi-key songs into one valid StyleProfile", "[analyzer][corpus]") {
+    const auto hiphop = loadFromFile(presetsRoot() / "90s_hiphop.json");
+    const auto liquid = loadFromFile(presetsRoot() / "liquid_dnb.json");
+    REQUIRE(hiphop.has_value());
+    REQUIRE(liquid.has_value());
+
+    // Song 1 in C minor, Song 2 transposed +5 semitones to F minor
+    const auto prog1 = ProgressionGenerator::generateProgression(*hiphop, 4, 101ULL);
+    const auto pat1 = PatternGenerator::generatePattern(*hiphop, prog1, PerformParams{}, 101ULL);
+
+    StyleProfile fMinorLiquid = *liquid;
+    fMinorLiquid.harmony.tonic_pc = 5;
+    const auto prog2 = ProgressionGenerator::generateProgression(fMinorLiquid, 4, 202ULL);
+    const auto pat2 = PatternGenerator::generatePattern(fMinorLiquid, prog2, PerformParams{}, 202ULL);
+
+    SongInput s1{pat1.all_events, 92.0, 4, 4};
+    SongInput s2{pat2.all_events, 174.0, 4, 4};
+
+    AnalysisOptions opts;
+    opts.id = "pooled_hybrid";
+    opts.name = "Pooled Hybrid";
+    opts.genre = "Hybrid";
+    const StyleProfile pooled = MidiStyleAnalyzer::analyzeCorpus({s1, s2}, opts);
+    REQUIRE(validate(pooled).valid);
+    CHECK(pooled.id == "pooled_hybrid");
+    CHECK(pooled.bpm_min <= 92.0);
+    CHECK(pooled.bpm_max >= 174.0);
+    CHECK_FALSE(pooled.harmony.vocabulary.empty());
+}

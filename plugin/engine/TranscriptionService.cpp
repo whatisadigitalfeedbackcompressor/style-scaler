@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <map>
 #include <thread>
 
 namespace style_scaler {
@@ -14,6 +13,30 @@ constexpr int kFftOrder = 12;
 constexpr int kFftSize = 1 << kFftOrder; // 4096
 constexpr int kHopSamples = 800;         // 50 ms at 16 kHz
 constexpr double kTwoPi = 6.28318530717958647692;
+
+std::vector<NoteEvent> timedNotesToEvents(const std::vector<TimedNoteSec>& notes, double bpm) {
+    const double beatsPerSec = std::max(20.0, bpm) / 60.0;
+    std::vector<NoteEvent> events;
+    events.reserve(notes.size());
+    for (const auto& n : notes) {
+        NoteEvent ev;
+        ev.onset_beats = std::max(0.0, n.onset_sec * beatsPerSec);
+        ev.duration_beats = std::max(0.0625, (n.offset_sec - n.onset_sec) * beatsPerSec);
+        ev.pitch = std::clamp(n.pitch, 0, 127);
+        ev.velocity = std::clamp(n.velocity, 1, 127);
+        ev.program = n.program;
+        ev.is_drum = n.is_drum || n.program == 128;
+        if (ev.is_drum) {
+            ev.channel = 10;
+        } else if (ev.program >= 32 && ev.program <= 39) {
+            ev.channel = 3;
+        } else {
+            ev.channel = 1;
+        }
+        events.push_back(ev);
+    }
+    return events;
+}
 } // namespace
 
 std::vector<TimedNoteSec> SpectralFallbackTranscriber::transcribe(
@@ -32,7 +55,6 @@ std::vector<TimedNoteSec> SpectralFallbackTranscriber::transcribe(
             0.5f * (1.0f - std::cos(static_cast<float>(kTwoPi * i / (kFftSize - 1))));
     }
 
-    // Precompute FFT bin ranges for MIDI pitches 28..96
     struct MidiBinRange {
         int pitch = 60;
         int binLo = 0;
@@ -80,7 +102,6 @@ std::vector<TimedNoteSec> SpectralFallbackTranscriber::transcribe(
             for (int b = mb.binLo; b <= mb.binHi; ++b) {
                 peak = std::max(peak, fftData[static_cast<size_t>(b)]);
             }
-            // Mild octave harmonic suppression so fundamentals dominate over 2nd harmonics
             if (mb.pitch >= 40) {
                 peak = std::max(0.0f, peak - 0.30f * pitchMag[static_cast<size_t>(mb.pitch - 12)]);
             }
@@ -154,6 +175,170 @@ std::vector<TimedNoteSec> SpectralFallbackTranscriber::transcribe(
     return out;
 }
 
+TranscriptionService::DeconstructedSong TranscriptionService::deconstructAudio16kBlocking(
+    const std::vector<float>& mono16k,
+    const DeconstructOptions& opts,
+    const std::function<bool(float, std::string)>& onProgress) {
+
+    DeconstructedSong out;
+    if (mono16k.empty()) {
+        out.error = "Empty audio buffer";
+        return out;
+    }
+
+    auto shouldCancel = [&]() -> bool {
+        return cancel_requested_.load(std::memory_order_acquire);
+    };
+
+    std::vector<TimedNoteSec> timedNotes;
+    std::string backendUsed;
+
+#if STYLE_SCALER_HAS_MUSCRIPTOR
+    if (!opts.force_spectral && model_manager_.isModelAvailable()) {
+        const auto ggufPath = std::filesystem::path(model_manager_.getActiveModelFile().getFullPathName().toStdString());
+        if (!cached_transcriber_ || cached_model_path_ != ggufPath) {
+            if (onProgress && !onProgress(0.12f, "Loading MuScriptor GGUF...")) {
+                out.error = "Cancelled";
+                return out;
+            }
+            msl::LoadOptions lopts;
+            lopts.should_cancel = shouldCancel;
+            lopts.on_progress = [&](float p) {
+                if (onProgress) onProgress(0.12f + 0.18f * p, "Loading MuScriptor weights...");
+            };
+            auto loaded = msl::Transcriber::load(ggufPath, lopts);
+            if (loaded) {
+                cached_transcriber_ = std::make_unique<msl::Transcriber>(std::move(*loaded));
+                cached_model_path_ = ggufPath;
+            } else {
+                cached_transcriber_.reset();
+            }
+        }
+
+        if (cached_transcriber_) {
+            msl::TranscribeOptions topts;
+            const unsigned hw = std::thread::hardware_concurrency();
+            topts.n_threads = (opts.n_threads > 0)
+                                  ? opts.n_threads
+                                  : std::max(1, static_cast<int>(hw > 0 ? hw / 2 : 2));
+            topts.should_cancel = shouldCancel;
+
+            if (onProgress && !onProgress(0.30f, "Transcribing with NeuralNote MuScriptor...")) {
+                out.error = "Cancelled";
+                return out;
+            }
+
+            auto mslNotes = cached_transcriber_->transcribe(
+                mono16k, topts, [&](const msl::TranscriptionUpdate& upd) {
+                    const bool keepGoing = !shouldCancel();
+                    if (onProgress && !onProgress(0.30f + 0.60f * upd.progress, "Transcribing with MuScriptor...")) {
+                        return false;
+                    }
+                    return keepGoing;
+                });
+
+            if (mslNotes) {
+                timedNotes.reserve(mslNotes->size());
+                for (const auto& n : *mslNotes) {
+                    TimedNoteSec tn;
+                    tn.onset_sec = n.onset;
+                    tn.offset_sec = std::max(n.onset + 0.02, n.offset);
+                    tn.pitch = n.pitch;
+                    tn.velocity = 96;
+                    tn.program = n.program;
+                    tn.is_drum = n.is_drum;
+                    timedNotes.push_back(tn);
+                }
+                backendUsed = "MuScriptor (" + cached_transcriber_->device().backend + ")";
+            } else if (mslNotes.error() == msl::Error::Cancelled) {
+                out.error = "Cancelled";
+                return out;
+            }
+        }
+    }
+#else
+    (void)shouldCancel;
+#endif
+
+    if (backendUsed.empty()) {
+        if (onProgress && !onProgress(0.35f, "Transcribing audio (Spectral Fallback)...")) {
+            out.error = "Cancelled";
+            return out;
+        }
+        timedNotes = SpectralFallbackTranscriber::transcribe(
+            mono16k, [&](float p) {
+                if (cancel_requested_.load(std::memory_order_acquire)) return false;
+                if (onProgress) return onProgress(0.35f + 0.55f * p, "Transcribing audio (Spectral Fallback)...");
+                return true;
+            });
+        backendUsed = "Spectral Fallback";
+    }
+
+    if (cancel_requested_.load(std::memory_order_acquire)) {
+        out.error = "Cancelled";
+        return out;
+    }
+
+    if (timedNotes.empty()) {
+        out.error = "No pitched notes detected in audio";
+        return out;
+    }
+
+    const double bpm = (opts.bpm_hint > 20.0) ? opts.bpm_hint : MidiStyleAnalyzer::estimateBpm(timedNotes);
+    out.timed_notes = std::move(timedNotes);
+    out.song_input.notes = timedNotesToEvents(out.timed_notes, bpm);
+    out.song_input.bpm = bpm;
+    out.song_input.time_sig_num = 4;
+    out.song_input.time_sig_den = 4;
+    out.backend_name = backendUsed;
+    out.success = true;
+    return out;
+}
+
+TranscriptionService::DeconstructedSong TranscriptionService::deconstructFileBlocking(
+    const juce::File& file,
+    const DeconstructOptions& opts,
+    const std::function<bool(float, std::string)>& onProgress) {
+
+    DeconstructedSong out;
+    if (!file.existsAsFile()) {
+        out.error = "File not found: " + file.getFullPathName().toStdString();
+        return out;
+    }
+
+    if (file.hasFileExtension(".mid") || file.hasFileExtension(".midi")) {
+        if (onProgress && !onProgress(0.25f, "Reading MIDI file...")) {
+            out.error = "Cancelled";
+            return out;
+        }
+        auto smf = SmfReader::readFile(file.getFullPathName().toStdString());
+        if (!smf) {
+            out.error = smf.error();
+            return out;
+        }
+        out.song_input.notes = std::move(smf->notes);
+        out.song_input.bpm = (opts.bpm_hint > 20.0) ? opts.bpm_hint : smf->bpm;
+        out.song_input.time_sig_num = smf->time_sig_num;
+        out.song_input.time_sig_den = smf->time_sig_den;
+        out.backend_name = "MIDI Direct";
+        out.success = true;
+        return out;
+    }
+
+    if (onProgress && !onProgress(0.08f, "Decoding & resampling audio...")) {
+        out.error = "Cancelled";
+        return out;
+    }
+    std::string decodeErr;
+    const auto mono16k = decodeAudioFileTo16kMono(file, decodeErr, opts.max_seconds);
+    if (mono16k.empty()) {
+        out.error = decodeErr.empty() ? "Failed to decode audio file" : decodeErr;
+        return out;
+    }
+
+    return deconstructAudio16kBlocking(mono16k, opts, onProgress);
+}
+
 class TranscriptionService::WorkerThread : public juce::Thread {
 public:
     WorkerThread(TranscriptionService& owner,
@@ -175,11 +360,15 @@ public:
           on_complete_(std::move(onComplete)) {}
 
     void run() override {
-        auto reportProgress = [&](float p, const std::string& status) {
+        auto reportProgress = [&](float p, const std::string& status) -> bool {
+            if (owner_.cancel_requested_.load(std::memory_order_acquire) || threadShouldExit()) {
+                return false;
+            }
             if (on_progress_) {
                 auto cb = on_progress_;
                 juce::MessageManager::callAsync([cb, p, status]() { cb(p, status); });
             }
+            return true;
         };
 
         auto finish = [&](Result r) {
@@ -193,141 +382,30 @@ public:
         Result res;
         res.target_slot = target_slot_;
 
-        // 1. Direct MIDI file drop
-        if (file_.existsAsFile() &&
-            (file_.hasFileExtension(".mid") || file_.hasFileExtension(".midi"))) {
-            reportProgress(0.2f, "Reading MIDI file...");
-            auto smf = SmfReader::readFile(file_.getFullPathName().toStdString());
-            if (!smf) {
-                res.error = smf.error();
-                finish(std::move(res));
-                return;
-            }
-            reportProgress(0.7f, "Extracting 4-axis StyleProfile...");
-            AnalysisOptions opts;
-            opts.id = file_.getFileNameWithoutExtension().replaceCharacter(' ', '_').toLowerCase().toStdString();
-            opts.name = file_.getFileNameWithoutExtension().toStdString();
-            opts.genre = "Analyzed MIDI";
-            opts.source = "in_plugin_midi";
-            opts.time_sig_num = smf->time_sig_num;
-            opts.time_sig_den = smf->time_sig_den;
-            res.profile = MidiStyleAnalyzer::analyze(smf->notes, smf->bpm, opts);
-            res.num_notes = smf->notes.size();
-            res.backend_name = "MIDI Direct";
-            res.success = true;
-            reportProgress(1.0f, "MIDI analysis complete");
-            finish(std::move(res));
-            return;
-        }
+        DeconstructOptions dopts;
+        dopts.max_seconds = 45.0;
 
-        // 2. Audio file decode or live capture resample to 16 kHz mono
-        std::vector<float> mono16k;
+        DeconstructedSong ds;
         std::string sourceTitle = label_.empty() ? "Captured Audio" : label_;
-
         if (file_.existsAsFile()) {
             sourceTitle = file_.getFileNameWithoutExtension().toStdString();
-            reportProgress(0.08f, "Decoding & resampling audio...");
-            std::string decodeErr;
-            mono16k = decodeAudioFileTo16kMono(file_, decodeErr);
-            if (mono16k.empty()) {
-                res.error = decodeErr.empty() ? "Failed to decode audio file" : decodeErr;
+            ds = owner_.deconstructFileBlocking(file_, dopts, reportProgress);
+        } else if (!audio_samples_.empty()) {
+            if (!reportProgress(0.08f, "Resampling captured DAW audio...")) {
+                res.error = "Cancelled";
                 finish(std::move(res));
                 return;
             }
-        } else if (!audio_samples_.empty()) {
-            reportProgress(0.08f, "Resampling captured DAW audio...");
-            mono16k = resampleTo16kMono(audio_samples_, sample_rate_);
+            const auto mono16k = resampleTo16kMono(audio_samples_, sample_rate_);
+            ds = owner_.deconstructAudio16kBlocking(mono16k, dopts, reportProgress);
         } else {
             res.error = "No audio or MIDI input provided";
             finish(std::move(res));
             return;
         }
 
-        if (owner_.cancel_requested_.load(std::memory_order_acquire) || threadShouldExit()) {
-            res.error = "Cancelled";
-            finish(std::move(res));
-            return;
-        }
-
-        std::vector<TimedNoteSec> timedNotes;
-        std::string backendUsed;
-
-#if STYLE_SCALER_HAS_MUSCRIPTOR
-        if (owner_.model_manager_.isModelAvailable()) {
-            const auto ggufPath = std::filesystem::path(owner_.model_manager_.getActiveModelFile().getFullPathName().toStdString());
-            if (!owner_.cached_transcriber_ || owner_.cached_model_path_ != ggufPath) {
-                reportProgress(0.12f, "Loading MuScriptor GGUF...");
-                msl::LoadOptions lopts;
-                lopts.should_cancel = [&]() {
-                    return owner_.cancel_requested_.load(std::memory_order_acquire) || threadShouldExit();
-                };
-                lopts.on_progress = [&](float p) {
-                    reportProgress(0.12f + 0.18f * p, "Loading MuScriptor weights...");
-                };
-                auto loaded = msl::Transcriber::load(ggufPath, lopts);
-                if (loaded) {
-                    owner_.cached_transcriber_ = std::make_unique<msl::Transcriber>(std::move(*loaded));
-                    owner_.cached_model_path_ = ggufPath;
-                } else {
-                    owner_.cached_transcriber_.reset();
-                }
-            }
-
-            if (owner_.cached_transcriber_) {
-                msl::TranscribeOptions topts;
-                const unsigned hw = std::thread::hardware_concurrency();
-                topts.n_threads = std::max(1, static_cast<int>(hw > 0 ? hw / 2 : 2));
-                topts.should_cancel = [&]() {
-                    return owner_.cancel_requested_.load(std::memory_order_acquire) || threadShouldExit();
-                };
-
-                reportProgress(0.30f, "Transcribing with NeuralNote MuScriptor...");
-                auto mslNotes = owner_.cached_transcriber_->transcribe(
-                    mono16k, topts, [&](const msl::TranscriptionUpdate& upd) {
-                        reportProgress(0.30f + 0.60f * upd.progress, "Transcribing with MuScriptor...");
-                        return !owner_.cancel_requested_.load(std::memory_order_acquire) && !threadShouldExit();
-                    });
-
-                if (mslNotes) {
-                    timedNotes.reserve(mslNotes->size());
-                    for (const auto& n : *mslNotes) {
-                        TimedNoteSec tn;
-                        tn.onset_sec = n.onset;
-                        tn.offset_sec = std::max(n.onset + 0.02, n.offset);
-                        tn.pitch = n.pitch;
-                        tn.velocity = 96;
-                        tn.program = n.program;
-                        tn.is_drum = n.is_drum;
-                        timedNotes.push_back(tn);
-                    }
-                    backendUsed = "MuScriptor (" + owner_.cached_transcriber_->device().backend + ")";
-                } else if (mslNotes.error() == msl::Error::Cancelled) {
-                    res.error = "Cancelled";
-                    finish(std::move(res));
-                    return;
-                }
-            }
-        }
-#endif
-
-        if (backendUsed.empty()) {
-            reportProgress(0.35f, "Transcribing audio (Spectral Fallback)...");
-            timedNotes = SpectralFallbackTranscriber::transcribe(
-                mono16k, [&](float p) {
-                    reportProgress(0.35f + 0.55f * p, "Transcribing audio (Spectral Fallback)...");
-                    return !owner_.cancel_requested_.load(std::memory_order_acquire) && !threadShouldExit();
-                });
-            backendUsed = "Spectral Fallback";
-        }
-
-        if (owner_.cancel_requested_.load(std::memory_order_acquire) || threadShouldExit()) {
-            res.error = "Cancelled";
-            finish(std::move(res));
-            return;
-        }
-
-        if (timedNotes.empty()) {
-            res.error = "No pitched notes detected in audio";
+        if (!ds.success) {
+            res.error = ds.error;
             finish(std::move(res));
             return;
         }
@@ -336,12 +414,14 @@ public:
         AnalysisOptions aopts;
         aopts.id = juce::String(sourceTitle).replaceCharacter(' ', '_').toLowerCase().toStdString();
         aopts.name = sourceTitle;
-        aopts.genre = "Transcribed Audio";
-        aopts.source = backendUsed;
+        aopts.genre = (ds.backend_name == "MIDI Direct") ? "Analyzed MIDI" : "Transcribed Audio";
+        aopts.source = ds.backend_name;
+        aopts.time_sig_num = ds.song_input.time_sig_num;
+        aopts.time_sig_den = ds.song_input.time_sig_den;
 
-        res.profile = MidiStyleAnalyzer::analyzeTimed(timedNotes, aopts);
-        res.num_notes = timedNotes.size();
-        res.backend_name = backendUsed;
+        res.profile = MidiStyleAnalyzer::analyze(ds.song_input.notes, ds.song_input.bpm, aopts);
+        res.num_notes = ds.song_input.notes.size();
+        res.backend_name = ds.backend_name;
         res.success = true;
         reportProgress(1.0f, "Style analysis ready (" + std::to_string(res.num_notes) + " notes)");
         finish(std::move(res));
@@ -420,7 +500,8 @@ std::vector<float> TranscriptionService::resampleTo16kMono(const std::vector<flo
 }
 
 std::vector<float> TranscriptionService::decodeAudioFileTo16kMono(const juce::File& file,
-                                                                  std::string& outError) {
+                                                                  std::string& outError,
+                                                                  double maxSeconds) {
     juce::AudioFormatManager fm;
     fm.registerBasicFormats();
     std::unique_ptr<juce::AudioFormatReader> reader(fm.createReaderFor(file));
@@ -429,9 +510,10 @@ std::vector<float> TranscriptionService::decodeAudioFileTo16kMono(const juce::Fi
         return {};
     }
 
+    const double effectiveMaxSec = (maxSeconds > 0.0) ? maxSeconds : 600.0;
     const int maxSamples = static_cast<int>(std::min<juce::int64>(
         reader->lengthInSamples,
-        static_cast<juce::int64>(std::llround(reader->sampleRate * 45.0))));
+        static_cast<juce::int64>(std::llround(reader->sampleRate * effectiveMaxSec))));
     if (maxSamples <= 0) {
         outError = "Audio file is empty";
         return {};

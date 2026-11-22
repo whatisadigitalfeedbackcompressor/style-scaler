@@ -8,6 +8,7 @@
 #include "engine/LockFreePatternSlot.h"
 #include "engine/MidiSequencer.h"
 #include "engine/ModelManager.h"
+#include "engine/PresetCatalogSync.h"
 #include "engine/PreviewSynth.h"
 #include "engine/TranscriptionService.h"
 
@@ -300,6 +301,61 @@ TEST_CASE("StyleScalerAudioProcessorEditor headless creation, half-size default,
     REQUIRE(editor2 != nullptr);
     CHECK(editor2->getWidth() == 740);
     CHECK(editor2->getHeight() == 500);
+}
+
+TEST_CASE("PresetCatalogSync SHA-256 verification, incremental cache, and hot-reload", "[catalog][sync]") {
+    const juce::File tempRoot = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                                    .getChildFile("StyleScalerCatalogSyncTest");
+    tempRoot.deleteRecursively();
+    const juce::File remoteDir = tempRoot.getChildFile("remote");
+    const juce::File stylesDir = remoteDir.getChildFile("styles");
+    const juce::File cacheDir = tempRoot.getChildFile("cache");
+    stylesDir.createDirectory();
+
+    StyleProfile ukg = makeDefaultStyleProfile();
+    ukg.id = "uk_garage";
+    ukg.name = "2-Step UK Garage";
+    ukg.genre = "UK Garage";
+    ukg.default_bpm = 132.0;
+
+    const juce::File ukgFile = stylesDir.getChildFile("uk_garage.json");
+    REQUIRE(saveToFile(ukg, ukgFile.getFullPathName().toStdString()).has_value());
+    const juce::String ukgSha = juce::SHA256(ukgFile).toHexString().toLowerCase();
+
+    StyleProfile bad = ukg;
+    bad.id = "tampered_style";
+    bad.name = "Tampered";
+    const juce::File badFile = stylesDir.getChildFile("tampered_style.json");
+    REQUIRE(saveToFile(bad, badFile.getFullPathName().toStdString()).has_value());
+
+    const juce::String catalogJson =
+        "{\n"
+        "  \"schema_version\": 1,\n"
+        "  \"catalog_name\": \"Test Catalog\",\n"
+        "  \"presets\": [\n"
+        "    {\"id\": \"uk_garage\", \"file\": \"styles/uk_garage.json\", \"sha256\": \"" + ukgSha + "\"},\n"
+        "    {\"id\": \"tampered_style\", \"file\": \"styles/tampered_style.json\", \"sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\"}\n"
+        "  ]\n"
+        "}\n";
+    const juce::File catFile = remoteDir.getChildFile("catalog.json");
+    REQUIRE(catFile.replaceWithText(catalogJson));
+
+    // First sync: downloads uk_garage, rejects tampered_style
+    const auto res1 = PresetCatalogSync::syncBlocking(catFile.getFullPathName().toStdString(), cacheDir);
+    CHECK(res1.success);
+    CHECK(res1.downloaded == 1);
+    CHECK(res1.failed == 1);
+    CHECK(res1.skipped == 0);
+    CHECK(cacheDir.getChildFile("uk_garage.json").existsAsFile());
+    CHECK_FALSE(cacheDir.getChildFile("tampered_style.json").existsAsFile());
+
+    // Second sync: skips already-cached matching SHA-256 preset
+    const auto res2 = PresetCatalogSync::syncBlocking(catFile.getFullPathName().toStdString(), cacheDir);
+    CHECK(res2.downloaded == 0);
+    CHECK(res2.skipped == 1);
+    CHECK(res2.failed == 1);
+
+    tempRoot.deleteRecursively();
 }
 
 int main(int argc, char* argv[]) {

@@ -42,6 +42,21 @@ public:
         size_t num_notes = 0;
     };
 
+    struct DeconstructedSong {
+        bool success = false;
+        std::string backend_name;
+        std::string error;
+        SongInput song_input;
+        std::vector<TimedNoteSec> timed_notes;
+    };
+
+    struct DeconstructOptions {
+        double max_seconds = 45.0; // <= 0 reads full track up to 600 s
+        int n_threads = 0;         // 0 = auto half cores
+        double bpm_hint = 0.0;     // <= 0 estimates BPM automatically
+        bool force_spectral = false;
+    };
+
     explicit TranscriptionService(ModelManager& modelManager);
     ~TranscriptionService();
 
@@ -60,11 +75,21 @@ public:
                               std::function<void(float, std::string)> onProgress,
                               std::function<void(Result)> onComplete);
 
+    DeconstructedSong deconstructFileBlocking(const juce::File& file,
+                                              const DeconstructOptions& opts,
+                                              const std::function<bool(float, std::string)>& onProgress = {});
+
+    DeconstructedSong deconstructAudio16kBlocking(const std::vector<float>& mono16k,
+                                                  const DeconstructOptions& opts,
+                                                  const std::function<bool(float, std::string)>& onProgress = {});
+
     void cancel();
     bool isRunning() const noexcept { return running_.load(std::memory_order_acquire); }
 
     static std::vector<float> resampleTo16kMono(const std::vector<float>& input, double sourceSampleRate);
-    static std::vector<float> decodeAudioFileTo16kMono(const juce::File& file, std::string& outError);
+    static std::vector<float> decodeAudioFileTo16kMono(const juce::File& file,
+                                                       std::string& outError,
+                                                       double maxSeconds = 45.0);
 
 private:
     class WorkerThread;
