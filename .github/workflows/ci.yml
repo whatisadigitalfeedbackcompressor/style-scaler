@@ -29,7 +29,7 @@ jobs:
 
       - name: Configure CMake (JUCE 8 + muscriptor.cpp)
         run: |
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" -DSTYLE_SCALER_BUILD_PLUGIN=ON -DSTYLE_SCALER_ENABLE_MUSCRIPTOR=ON -DMUSCRIPTOR_NATIVE=ON
+          cmake -S . -B build -A x64 "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" -DSTYLE_SCALER_BUILD_PLUGIN=ON -DSTYLE_SCALER_ENABLE_MUSCRIPTOR=ON -DMUSCRIPTOR_NATIVE=ON
 
       - name: Build VST3, Standalone, CLIs, and Tests (Release)
         run: |
