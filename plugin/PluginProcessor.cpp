@@ -909,6 +909,102 @@ juce::File StyleScalerAudioProcessor::exportTempMidiForDrag(int channelFilter) c
     return outFile;
 }
 
+namespace {
+juce::File writeSingleChordTempMidi(const juce::File& outFile,
+                                    const std::vector<int>& pitches,
+                                    double durationBeats,
+                                    double bpm,
+                                    int tsNum,
+                                    int tsDen) {
+    std::vector<NoteEvent> events;
+    events.reserve(pitches.size());
+    const double dur = std::max(0.25, durationBeats);
+    for (int p : pitches) {
+        events.push_back(NoteEvent{0.0, dur, std::clamp(p, 0, 127), 96, 1, false, 0});
+    }
+    (void)SmfWriter::writeType1(
+        outFile.getFullPathName().toStdString(),
+        bpm > 20.0 ? bpm : 120.0,
+        tsNum,
+        tsDen,
+        events);
+    return outFile;
+}
+
+std::string encodePadSymbolForFilename(const std::string& sym) {
+    std::string out;
+    for (unsigned char c : sym) {
+        if (c == '/') out += "_SL_";
+        else if (c == '\\' || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' || c == '>' || c == '|') out.push_back('_');
+        else out.push_back(static_cast<char>(c));
+    }
+    return out.empty() ? "i" : out;
+}
+} // namespace
+
+juce::File StyleScalerAudioProcessor::exportTempSlotMidiForDrag(size_t slotIndex) const {
+    const juce::File tmpDir = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("StyleScaler");
+    tmpDir.createDirectory();
+
+    const auto snap = getSnapshot();
+    const double liveBpm = currentBpm();
+    const double bpm = (isDawSync() && liveBpm > 20.0) ? liveBpm : snap.blended.default_bpm;
+    const double spread = apvts_.getRawParameterValue(ParamIDs::voicingSpread)->load();
+
+    ProgressionSlot slot;
+    if (slotIndex < snap.progression.size()) {
+        slot = snap.progression[slotIndex];
+    } else {
+        slot.bar_index = static_cast<int>(slotIndex);
+        slot.duration_beats = 4.0;
+        slot.roman_symbol = "i";
+        slot.chord = RomanChord{1, 0, ChordQuality::Min};
+    }
+
+    const auto notes = VoicingEngine::voiceChord(
+        slot.chord,
+        snap.blended.harmony.tonic_pc,
+        snap.blended.harmony.mode,
+        snap.blended.voicing,
+        {},
+        spread,
+        slot.octave_shift,
+        slot.inversion_override,
+        slot.richness_override);
+
+    const std::string concrete = formatRomanAsConcreteChord(
+        slot.chord, snap.blended.harmony.tonic_pc, snap.blended.harmony.mode);
+    const std::string safeConcrete = AudioMetadataReader::sanitizeGenreSlug(concrete);
+    const juce::File outFile = tmpDir.getChildFile(
+        "StyleScaler_Bar" + juce::String(slot.bar_index + 1) + "_" + juce::String(safeConcrete) + ".mid");
+    return writeSingleChordTempMidi(
+        outFile, notes, slot.duration_beats, bpm, snap.blended.time_sig_num, snap.blended.time_sig_den);
+}
+
+juce::File StyleScalerAudioProcessor::exportTempChordMidiForDrag(const std::string& romanSymbol,
+                                                                 const RomanChord& chord) const {
+    const juce::File tmpDir = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("StyleScaler");
+    tmpDir.createDirectory();
+
+    const auto snap = getSnapshot();
+    const double liveBpm = currentBpm();
+    const double bpm = (isDawSync() && liveBpm > 20.0) ? liveBpm : snap.blended.default_bpm;
+    const double spread = apvts_.getRawParameterValue(ParamIDs::voicingSpread)->load();
+
+    const auto notes = VoicingEngine::voiceChord(
+        chord,
+        snap.blended.harmony.tonic_pc,
+        snap.blended.harmony.mode,
+        snap.blended.voicing,
+        {},
+        spread);
+
+    const juce::File outFile = tmpDir.getChildFile(
+        "StyleScaler_Pad__" + juce::String(encodePadSymbolForFilename(romanSymbol)) + "__.mid");
+    return writeSingleChordTempMidi(
+        outFile, notes, 4.0, bpm, snap.blended.time_sig_num, snap.blended.time_sig_den);
+}
+
 void StyleScalerAudioProcessor::getStateInformation(juce::MemoryBlock& destData) {
     auto apvtsState = apvts_.copyState();
     auto rootXml = apvtsState.createXml();

@@ -7,6 +7,8 @@ namespace style_scaler::ui {
 
 TimelineComponent::SlotCard::SlotCard(TimelineComponent& owner, size_t slotIndex)
     : owner_(owner), slot_index_(slotIndex) {
+    setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+
     addAndMakeVisible(lock_btn_);
     lock_btn_.onClick = [this]() {
         owner_.processor_.setSlotLocked(slot_index_, !slot.locked);
@@ -104,7 +106,9 @@ void TimelineComponent::SlotCard::resized() {
                         slot.locked ? Theme::lockAmber.withAlpha(0.28f) : Theme::bgElevated);
 }
 
-void TimelineComponent::SlotCard::mouseDown(const juce::MouseEvent&) {
+void TimelineComponent::SlotCard::mouseDown(const juce::MouseEvent& e) {
+    down_pos_ = e.getPosition();
+    drag_started_ = false;
     auditioning_ = true;
     owner_.selected_slot_index_ = static_cast<int>(slot_index_);
     owner_.processor_.auditionChordPress(
@@ -113,6 +117,20 @@ void TimelineComponent::SlotCard::mouseDown(const juce::MouseEvent&) {
         owner_.onSlotSelected(slot.roman_symbol);
     }
     owner_.updatePlayhead();
+}
+
+void TimelineComponent::SlotCard::mouseDrag(const juce::MouseEvent& e) {
+    if (!drag_started_ && down_pos_.getDistanceFrom(e.getPosition()) > 4) {
+        drag_started_ = true;
+        if (auditioning_) {
+            auditioning_ = false;
+            owner_.processor_.auditionChordRelease();
+        }
+        const juce::File midFile = owner_.processor_.exportTempSlotMidiForDrag(slot_index_);
+        if (midFile.existsAsFile()) {
+            juce::DragAndDropContainer::performExternalDragDropOfFiles({midFile.getFullPathName()}, false, this);
+        }
+    }
 }
 
 void TimelineComponent::SlotCard::mouseUp(const juce::MouseEvent&) {
@@ -134,6 +152,38 @@ void TimelineComponent::SlotCard::itemDropped(const SourceDetails& details) {
         if (auto parsed = parseRomanChord(sym)) {
             owner_.processor_.replaceSlotChord(slot_index_, sym, *parsed);
             if (owner_.onSlotSelected) owner_.onSlotSelected(sym);
+        }
+    }
+    repaint();
+}
+
+namespace {
+std::string extractPadSymbolFromTempMidi(const juce::String& filePath) {
+    const juce::String name = juce::File(filePath).getFileName();
+    if (!name.startsWith("StyleScaler_Pad__") || !name.endsWith("__.mid")) return {};
+    juce::String sym = name.fromFirstOccurrenceOf("StyleScaler_Pad__", false, false);
+    sym = sym.upToLastOccurrenceOf("__.mid", false, false);
+    return sym.replace("_SL_", "/").toStdString();
+}
+} // namespace
+
+bool TimelineComponent::SlotCard::isInterestedInFileDrag(const juce::StringArray& files) {
+    for (const auto& f : files) {
+        if (!extractPadSymbolFromTempMidi(f).empty()) return true;
+    }
+    return false;
+}
+
+void TimelineComponent::SlotCard::filesDropped(const juce::StringArray& files, int, int) {
+    drag_over_ = false;
+    for (const auto& f : files) {
+        const std::string sym = extractPadSymbolFromTempMidi(f);
+        if (!sym.empty()) {
+            if (auto parsed = parseRomanChord(sym)) {
+                owner_.processor_.replaceSlotChord(slot_index_, sym, *parsed);
+                if (owner_.onSlotSelected) owner_.onSlotSelected(sym);
+                break;
+            }
         }
     }
     repaint();

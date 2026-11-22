@@ -26,19 +26,26 @@ public:
 
 private:
     class SlotCard : public juce::Component,
-                     public juce::DragAndDropTarget {
+                     public juce::DragAndDropTarget,
+                     public juce::FileDragAndDropTarget {
     public:
         SlotCard(TimelineComponent& owner, size_t slotIndex);
 
         void paint(juce::Graphics& g) override;
         void resized() override;
         void mouseDown(const juce::MouseEvent& e) override;
+        void mouseDrag(const juce::MouseEvent& e) override;
         void mouseUp(const juce::MouseEvent& e) override;
 
         bool isInterestedInDragSource(const SourceDetails& details) override;
         void itemDragEnter(const SourceDetails&) override { drag_over_ = true; repaint(); }
         void itemDragExit(const SourceDetails&) override { drag_over_ = false; repaint(); }
         void itemDropped(const SourceDetails& details) override;
+
+        bool isInterestedInFileDrag(const juce::StringArray& files) override;
+        void fileDragEnter(const juce::StringArray&, int, int) override { drag_over_ = true; repaint(); }
+        void fileDragExit(const juce::StringArray&) override { drag_over_ = false; repaint(); }
+        void filesDropped(const juce::StringArray& files, int, int) override;
 
         ProgressionSlot slot;
         std::string concrete_name;
@@ -53,6 +60,8 @@ private:
         size_t slot_index_ = 0;
         bool auditioning_ = false;
         bool drag_over_ = false;
+        bool drag_started_ = false;
+        juce::Point<int> down_pos_;
 
         juce::TextButton lock_btn_{"Lock"};
         juce::TextButton sub_btn_{"Sub"};

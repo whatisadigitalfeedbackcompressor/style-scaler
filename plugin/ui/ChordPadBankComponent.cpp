@@ -8,7 +8,9 @@
 namespace style_scaler::ui {
 
 ChordPadBankComponent::ChordPadButton::ChordPadButton(ChordPadBankComponent& owner, size_t index)
-    : owner_(owner), index_(index) {}
+    : owner_(owner), index_(index) {
+    setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+}
 
 void ChordPadBankComponent::ChordPadButton::paint(juce::Graphics& g) {
     const auto b = getLocalBounds().toFloat().reduced(1.5f);
@@ -96,10 +98,16 @@ void ChordPadBankComponent::ChordPadButton::mouseDown(const juce::MouseEvent& e)
 }
 
 void ChordPadBankComponent::ChordPadButton::mouseDrag(const juce::MouseEvent& e) {
-    if (!drag_started_ && down_pos_.getDistanceFrom(e.getPosition()) > 6) {
-        if (auto* dnd = juce::DragAndDropContainer::findParentDragContainerFor(this)) {
-            drag_started_ = true;
-            dnd->startDragging("PAD:" + juce::String(roman_symbol), this);
+    if (!drag_started_ && down_pos_.getDistanceFrom(e.getPosition()) > 4) {
+        drag_started_ = true;
+        if (pressed_) {
+            pressed_ = false;
+            owner_.processor_.auditionChordRelease();
+            repaint();
+        }
+        const juce::File midFile = owner_.processor_.exportTempChordMidiForDrag(roman_symbol, chord);
+        if (midFile.existsAsFile()) {
+            juce::DragAndDropContainer::performExternalDragDropOfFiles({midFile.getFullPathName()}, false, this);
         }
     }
 }

@@ -7,7 +7,27 @@ namespace style_scaler::ui {
 namespace {
 bool isSupportedDropExtension(const juce::String& filePath) {
     const juce::File f(filePath);
+    if (f.getFileName().startsWithIgnoreCase("StyleScaler_")) return false;
     return f.hasFileExtension(".wav;.aif;.aiff;.flac;.ogg;.mp3;.m4a;.aac;.mid;.midi");
+}
+
+juce::String formatPresetComboLabel(const StyleProfile& prof) {
+    const std::string g = prof.genre.empty() ? std::string("Uncategorized") : prof.genre;
+    auto lowEq = [](const std::string& a, const std::string& b) {
+        if (a.size() != b.size()) return false;
+        for (size_t i = 0; i < a.size(); ++i) {
+            if (std::tolower(static_cast<unsigned char>(a[i])) !=
+                std::tolower(static_cast<unsigned char>(b[i]))) {
+                return false;
+            }
+        }
+        return true;
+    };
+    if (lowEq(prof.name, g)) {
+        const int tc = std::max(1, prof.track_count);
+        return juce::String(g) + " (" + juce::String(tc) + (tc == 1 ? " track)" : " tracks)");
+    }
+    return juce::String(prof.name) + " (" + juce::String(g) + ")";
 }
 
 std::string buildLibrarySignature(const std::vector<StyleProfile>& lib) {
@@ -17,6 +37,8 @@ std::string buildLibrarySignature(const std::vector<StyleProfile>& lib) {
         sig.append(p.id);
         sig.push_back('|');
         sig.append(p.genre);
+        sig.push_back(':');
+        sig.append(std::to_string(p.track_count));
     }
     return sig;
 }
@@ -225,7 +247,7 @@ void TopDetectDnaPanel::populatePresetCombos() {
             lastHeading = g;
         }
         const int itemId = static_cast<int>(i) + 1; // Preserve 1-based index into processor_.getPresetLibrary()
-        const juce::String label = juce::String(lib[i].name) + " (" + juce::String(g) + ")";
+        const juce::String label = formatPresetComboLabel(lib[i]);
         slot_a_combo_.addItem(label, itemId);
         slot_b_combo_.addItem(label, itemId);
     }
@@ -235,13 +257,13 @@ void TopDetectDnaPanel::populatePresetCombos() {
     if (selA > 0 && slot_a_combo_.indexOfItemId(selA) >= 0) {
         slot_a_combo_.setSelectedId(selA, juce::dontSendNotification);
     } else {
-        slot_a_combo_.setText(juce::String(snap.slot_a.name) + " (" + juce::String(snap.slot_a.genre) + ")",
+        slot_a_combo_.setText(formatPresetComboLabel(snap.slot_a),
                               juce::dontSendNotification);
     }
     if (selB > 0 && slot_b_combo_.indexOfItemId(selB) >= 0) {
         slot_b_combo_.setSelectedId(selB, juce::dontSendNotification);
     } else {
-        slot_b_combo_.setText(juce::String(snap.slot_b.name) + " (" + juce::String(snap.slot_b.genre) + ")",
+        slot_b_combo_.setText(formatPresetComboLabel(snap.slot_b),
                               juce::dontSendNotification);
     }
 }
@@ -261,7 +283,7 @@ void TopDetectDnaPanel::refreshFromProcessor() {
                 slot_a_combo_.setSelectedId(selA, juce::dontSendNotification);
             }
         } else {
-            slot_a_combo_.setText(juce::String(snap.slot_a.name) + " (" + juce::String(snap.slot_a.genre) + ")",
+            slot_a_combo_.setText(formatPresetComboLabel(snap.slot_a),
                                   juce::dontSendNotification);
         }
         if (selB > 0 && slot_b_combo_.indexOfItemId(selB) >= 0) {
@@ -269,7 +291,7 @@ void TopDetectDnaPanel::refreshFromProcessor() {
                 slot_b_combo_.setSelectedId(selB, juce::dontSendNotification);
             }
         } else {
-            slot_b_combo_.setText(juce::String(snap.slot_b.name) + " (" + juce::String(snap.slot_b.genre) + ")",
+            slot_b_combo_.setText(formatPresetComboLabel(snap.slot_b),
                                   juce::dontSendNotification);
         }
     }

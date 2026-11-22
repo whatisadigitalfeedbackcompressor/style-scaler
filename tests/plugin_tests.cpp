@@ -11,6 +11,7 @@
 #include "engine/PresetCatalogSync.h"
 #include "engine/PreviewSynth.h"
 #include "engine/TranscriptionService.h"
+#include "style_scaler/SmfIO.h"
 
 #include <JuceHeader.h>
 #include <cmath>
@@ -266,11 +267,27 @@ TEST_CASE("StyleScalerAudioProcessor processBlock, state persistence, and MIDI e
     REQUIRE_FALSE(snap2.progression.empty());
     CHECK(snap2.progression.front().locked == true);
 
-    // Export temp MIDI for drag-and-drop
+    // Export temp MIDI for drag-and-drop (Full pattern, Timeline slot card, and Chord Pad)
     const juce::File tmpMid = proc.exportTempMidiForDrag(0);
     CHECK(tmpMid.existsAsFile());
     CHECK(tmpMid.getSize() > 32);
     tmpMid.deleteFile();
+
+    const juce::File slotMid = proc.exportTempSlotMidiForDrag(0);
+    REQUIRE(slotMid.existsAsFile());
+    CHECK(slotMid.getSize() > 32);
+    const auto slotParsed = SmfReader::readFile(slotMid.getFullPathName().toStdString());
+    REQUIRE(slotParsed.has_value());
+    CHECK(slotParsed->notes.size() >= 3);
+    slotMid.deleteFile();
+
+    const juce::File padMid = proc.exportTempChordMidiForDrag("i7", RomanChord{1, 0, ChordQuality::Min7});
+    REQUIRE(padMid.existsAsFile());
+    CHECK(padMid.getSize() > 32);
+    const auto padParsed = SmfReader::readFile(padMid.getFullPathName().toStdString());
+    REQUIRE(padParsed.has_value());
+    CHECK(padParsed->notes.size() >= 3);
+    padMid.deleteFile();
 }
 
 TEST_CASE("StyleScalerAudioProcessorEditor headless creation, half-size default, resize, and paint", "[editor]") {
@@ -320,7 +337,22 @@ TEST_CASE("PresetCatalogSync SHA-256 verification, incremental cache, and hot-re
 
     const juce::File ukgFile = stylesDir.getChildFile("uk_garage.json");
     REQUIRE(saveToFile(ukg, ukgFile.getFullPathName().toStdString()).has_value());
-    const juce::String ukgSha = juce::SHA256(ukgFile).toHexString().toLowerCase();
+    const std::string ukgLf = ukgFile.loadFileAsString().replace("\r\n", "\n").toStdString();
+    REQUIRE(ukgFile.replaceWithData(ukgLf.data(), ukgLf.size()));
+    const juce::String ukgSha = juce::SHA256(ukgLf.data(), ukgLf.size()).toHexString().toLowerCase();
+
+    StyleProfile ukgCrlf = ukg;
+    ukgCrlf.id = "uk_garage_crlf";
+    const juce::File ukgCrlfFile = stylesDir.getChildFile("uk_garage_crlf.json");
+    REQUIRE(saveToFile(ukgCrlf, ukgCrlfFile.getFullPathName().toStdString()).has_value());
+    const std::string crlfLf = ukgCrlfFile.loadFileAsString().replace("\r\n", "\n").toStdString();
+    REQUIRE(ukgCrlfFile.replaceWithData(crlfLf.data(), crlfLf.size()));
+    std::string crlfBytes;
+    for (char c : crlfLf) {
+        if (c == '\n') crlfBytes.push_back('\r');
+        crlfBytes.push_back(c);
+    }
+    const juce::String ukgCrlfSha = juce::SHA256(crlfBytes.data(), crlfBytes.size()).toHexString().toLowerCase();
 
     StyleProfile bad = ukg;
     bad.id = "tampered_style";
@@ -334,25 +366,27 @@ TEST_CASE("PresetCatalogSync SHA-256 verification, incremental cache, and hot-re
         "  \"catalog_name\": \"Test Catalog\",\n"
         "  \"presets\": [\n"
         "    {\"id\": \"uk_garage\", \"file\": \"styles/uk_garage.json\", \"sha256\": \"" + ukgSha + "\"},\n"
+        "    {\"id\": \"uk_garage_crlf\", \"file\": \"styles/uk_garage_crlf.json\", \"sha256\": \"" + ukgCrlfSha + "\"},\n"
         "    {\"id\": \"tampered_style\", \"file\": \"styles/tampered_style.json\", \"sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\"}\n"
         "  ]\n"
         "}\n";
     const juce::File catFile = remoteDir.getChildFile("catalog.json");
     REQUIRE(catFile.replaceWithText(catalogJson));
 
-    // First sync: downloads uk_garage, rejects tampered_style
+    // First sync: downloads uk_garage + CRLF-hashed uk_garage_crlf, rejects tampered_style
     const auto res1 = PresetCatalogSync::syncBlocking(catFile.getFullPathName().toStdString(), cacheDir);
     CHECK(res1.success);
-    CHECK(res1.downloaded == 1);
+    CHECK(res1.downloaded == 2);
     CHECK(res1.failed == 1);
     CHECK(res1.skipped == 0);
     CHECK(cacheDir.getChildFile("uk_garage.json").existsAsFile());
+    CHECK(cacheDir.getChildFile("uk_garage_crlf.json").existsAsFile());
     CHECK_FALSE(cacheDir.getChildFile("tampered_style.json").existsAsFile());
 
-    // Second sync: skips already-cached matching SHA-256 preset
+    // Second sync: skips already-cached presets across both LF and CRLF digests
     const auto res2 = PresetCatalogSync::syncBlocking(catFile.getFullPathName().toStdString(), cacheDir);
     CHECK(res2.downloaded == 0);
-    CHECK(res2.skipped == 1);
+    CHECK(res2.skipped == 2);
     CHECK(res2.failed == 1);
 
     tempRoot.deleteRecursively();

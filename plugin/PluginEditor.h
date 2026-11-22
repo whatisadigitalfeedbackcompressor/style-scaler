@@ -32,6 +32,11 @@ public:
 
     void refreshAllPanels();
 
+protected:
+    bool shouldDropFilesWhenDraggedExternally(const juce::DragAndDropTarget::SourceDetails& sourceDetails,
+                                              juce::StringArray& files,
+                                              bool& canMoveFiles) override;
+
 private:
     class ContentRoot : public juce::Component {
     public:

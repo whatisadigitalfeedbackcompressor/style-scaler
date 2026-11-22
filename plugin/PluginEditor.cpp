@@ -122,4 +122,23 @@ void StyleScalerAudioProcessorEditor::resized() {
     }
 }
 
+bool StyleScalerAudioProcessorEditor::shouldDropFilesWhenDraggedExternally(
+    const juce::DragAndDropTarget::SourceDetails& sourceDetails,
+    juce::StringArray& files,
+    bool& canMoveFiles) {
+    const juce::String desc = sourceDetails.description.toString();
+    if (desc.startsWith("PAD:")) {
+        const std::string sym = desc.fromFirstOccurrenceOf("PAD:", false, false).toStdString();
+        if (auto parsed = parseRomanChord(sym)) {
+            const juce::File midFile = processor_.exportTempChordMidiForDrag(sym, *parsed);
+            if (midFile.existsAsFile()) {
+                files.add(midFile.getFullPathName());
+                canMoveFiles = false;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 } // namespace style_scaler

@@ -30,6 +30,40 @@ std::string sanitizeFilenameStem(const std::string& raw) {
     return out.empty() ? "preset" : out;
 }
 
+std::string normalizeLf(const std::string& text) {
+    std::string out;
+    out.reserve(text.size());
+    for (size_t i = 0; i < text.size(); ++i) {
+        if (text[i] == '\r' && i + 1 < text.size() && text[i + 1] == '\n') {
+            continue;
+        }
+        out.push_back(text[i]);
+    }
+    return out;
+}
+
+std::string normalizeCrlf(const std::string& lfText) {
+    std::string out;
+    out.reserve(lfText.size() + lfText.size() / 20);
+    for (char c : lfText) {
+        if (c == '\n') out.push_back('\r');
+        out.push_back(c);
+    }
+    return out;
+}
+
+bool sha256MatchesNormalized(const std::string& text, const std::string& expectedHex) {
+    if (expectedHex.empty()) return true;
+    const juce::SHA256 rawSha(text.data(), text.size());
+    if (rawSha.toHexString().equalsIgnoreCase(expectedHex.c_str())) return true;
+    const std::string lf = normalizeLf(text);
+    const juce::SHA256 lfSha(lf.data(), lf.size());
+    if (lfSha.toHexString().equalsIgnoreCase(expectedHex.c_str())) return true;
+    const std::string crlf = normalizeCrlf(lf);
+    const juce::SHA256 crlfSha(crlf.data(), crlf.size());
+    return crlfSha.toHexString().equalsIgnoreCase(expectedHex.c_str());
+}
+
 bool readResourceText(const std::string& urlOrPath, std::string& outText, std::string& outError) {
     if (isHttpUrl(urlOrPath)) {
         const juce::URL url(urlOrPath);
@@ -264,9 +298,9 @@ PresetCatalogSync::SyncResult PresetCatalogSync::syncBlocking(
 
         const juce::File targetFile = cacheDir.getChildFile(juce::String(safeStem) + ".json");
         if (targetFile.existsAsFile() && !expectedSha.empty()) {
-            const juce::SHA256 existingSha(targetFile);
-            if (existingSha.toHexString().equalsIgnoreCase(expectedSha.c_str()) &&
-                loadFromFile(targetFile.getFullPathName().toStdString()).has_value()) {
+            const std::string existingText = targetFile.loadFileAsString().toStdString();
+            if (sha256MatchesNormalized(existingText, expectedSha) &&
+                loadFromJsonString(existingText).has_value()) {
                 ++res.skipped;
                 continue;
             }
@@ -280,22 +314,20 @@ PresetCatalogSync::SyncResult PresetCatalogSync::syncBlocking(
             continue;
         }
 
-        if (!expectedSha.empty()) {
-            const juce::SHA256 gotSha(presetText.data(), presetText.size());
-            if (!gotSha.toHexString().equalsIgnoreCase(expectedSha.c_str())) {
-                ++res.failed;
-                continue;
-            }
+        if (!sha256MatchesNormalized(presetText, expectedSha)) {
+            ++res.failed;
+            continue;
         }
 
-        if (!loadFromJsonString(presetText).has_value()) {
+        const std::string lfPreset = normalizeLf(presetText);
+        if (!loadFromJsonString(lfPreset).has_value()) {
             ++res.failed;
             continue;
         }
 
         const juce::File partFile = targetFile.getSiblingFile(targetFile.getFileName() + ".part");
         partFile.deleteFile();
-        if (!partFile.replaceWithData(presetText.data(), presetText.size()) || !partFile.moveFileTo(targetFile)) {
+        if (!partFile.replaceWithData(lfPreset.data(), lfPreset.size()) || !partFile.moveFileTo(targetFile)) {
             partFile.deleteFile();
             ++res.failed;
             continue;

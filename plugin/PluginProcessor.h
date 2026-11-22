@@ -163,6 +163,8 @@ public:
     // --- MIDI Export (Ch 1/2/3/Full) ---
     bool exportMidiToFile(const juce::File& destFile, int channelFilter, std::string& outError) const;
     juce::File exportTempMidiForDrag(int channelFilter) const;
+    juce::File exportTempSlotMidiForDrag(size_t slotIndex) const;
+    juce::File exportTempChordMidiForDrag(const std::string& romanSymbol, const RomanChord& chord) const;
 
     // --- Persisted UI Window Size ---
     int getEditorWidth() const noexcept { return editor_width_.load(std::memory_order_relaxed); }
