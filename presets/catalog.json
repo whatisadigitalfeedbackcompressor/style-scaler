@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "catalog_name": "StyleScaler Preset Catalog",
-  "updated_at": "2026-11-23T13:45:54Z",
+  "updated_at": "2026-11-23T14:03:10Z",
   "genres": {
     "Drum & Bass": [
       "liquid_dnb",
@@ -15,6 +15,9 @@
     ],
     "House / Melodic Techno": [
       "melodic_house"
+    ],
+    "Pop / Rock": [
+      "pop_rock"
     ],
     "R&B": [
       "r_b"
@@ -39,7 +42,7 @@
       "default_bpm": 92.0,
       "mode": "dorian",
       "tonic_pc": 0,
-      "updated_at": "2026-11-23T13:45:54Z"
+      "updated_at": "2026-11-23T14:03:10Z"
     },
     {
       "id": "funk_disco",
@@ -53,7 +56,7 @@
       "default_bpm": 147.1818181818182,
       "mode": "minor",
       "tonic_pc": 7,
-      "updated_at": "2026-11-23T13:45:54Z",
+      "updated_at": "2026-11-23T14:03:10Z",
       "tags": [
         "funk / disco",
         "r&b / neo-soul",
@@ -73,7 +76,7 @@
       "default_bpm": 174.0,
       "mode": "minor",
       "tonic_pc": 0,
-      "updated_at": "2026-11-23T13:45:54Z"
+      "updated_at": "2026-11-23T14:03:10Z"
     },
     {
       "id": "melodic_house",
@@ -87,7 +90,7 @@
       "default_bpm": 124.0,
       "mode": "minor",
       "tonic_pc": 0,
-      "updated_at": "2026-11-23T13:45:54Z"
+      "updated_at": "2026-11-23T14:03:10Z"
     },
     {
       "id": "neo_soul",
@@ -101,7 +104,7 @@
       "default_bpm": 88.0,
       "mode": "dorian",
       "tonic_pc": 7,
-      "updated_at": "2026-11-23T13:45:54Z"
+      "updated_at": "2026-11-23T14:03:10Z"
     },
     {
       "id": "neuro_dnb",
@@ -115,7 +118,25 @@
       "default_bpm": 174.0,
       "mode": "phrygian",
       "tonic_pc": 0,
-      "updated_at": "2026-11-23T13:45:54Z"
+      "updated_at": "2026-11-23T14:03:10Z"
+    },
+    {
+      "id": "pop_rock",
+      "name": "Pop / Rock",
+      "genre": "Pop / Rock",
+      "description": "Offline deconstructed Pop / Rock from 11 track(s) via offline_MuScriptor (CPU) [genre: path]",
+      "file": "styles/pop_rock.json",
+      "sha256": "89bd75ec64c5dd934445e5d117b526a4f436f0f5794518f977b535abddb738b2",
+      "bpm_min": 110.0,
+      "bpm_max": 171.0,
+      "default_bpm": 140.0909090909091,
+      "mode": "major",
+      "tonic_pc": 9,
+      "updated_at": "2026-11-23T14:03:10Z",
+      "tags": [
+        "pop / rock"
+      ],
+      "genre_source": "path"
     },
     {
       "id": "r_b",
@@ -129,7 +150,7 @@
       "default_bpm": 149.88888888888889,
       "mode": "dorian",
       "tonic_pc": 4,
-      "updated_at": "2026-11-23T13:45:54Z",
+      "updated_at": "2026-11-23T14:03:10Z",
       "tags": [
         "r&b"
       ],
@@ -139,18 +160,15 @@
       "id": "trap",
       "name": "Modern Dark Trap",
       "genre": "Trap",
-      "description": "Offline deconstructed Trap from 7 track(s) via offline_MuScriptor (CPU)",
+      "description": "Phrygian/Aeolian sparse dark pads, deep 808 sub patterns, eerie upper bells",
       "file": "styles/trap.json",
-      "sha256": "f8309790cb17ef43eb457d3bbd8b0428541c50065a28ccdf263beceef23370d7",
+      "sha256": "ed5cbfb2180a9c4298085b85079c3336fe0814bff61db22959c5b4440a37e08e",
       "bpm_min": 130.0,
-      "bpm_max": 163.0,
-      "default_bpm": 142.14285714285714,
+      "bpm_max": 150.0,
+      "default_bpm": 140.0,
       "mode": "phrygian",
       "tonic_pc": 0,
-      "updated_at": "2026-11-23T13:45:54Z",
-      "tags": [
-        "trap"
-      ]
+      "updated_at": "2026-11-23T14:03:10Z"
     }
   ]
 }
