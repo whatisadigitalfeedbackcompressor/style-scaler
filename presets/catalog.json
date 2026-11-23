@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "catalog_name": "StyleScaler Preset Catalog",
-  "updated_at": "2026-11-22T22:31:21Z",
+  "updated_at": "2026-11-23T13:38:08Z",
   "genres": {
     "Drum & Bass": [
       "liquid_dnb",
@@ -15,6 +15,9 @@
     ],
     "House / Melodic Techno": [
       "melodic_house"
+    ],
+    "R&B": [
+      "r_b"
     ],
     "R&B / Neo-Soul": [
       "neo_soul"
@@ -36,7 +39,7 @@
       "default_bpm": 92.0,
       "mode": "dorian",
       "tonic_pc": 0,
-      "updated_at": "2026-11-22T22:31:21Z"
+      "updated_at": "2026-11-23T13:38:08Z"
     },
     {
       "id": "funk_disco",
@@ -50,7 +53,7 @@
       "default_bpm": 147.1818181818182,
       "mode": "minor",
       "tonic_pc": 7,
-      "updated_at": "2026-11-22T22:31:21Z",
+      "updated_at": "2026-11-23T13:38:08Z",
       "tags": [
         "funk / disco",
         "r&b / neo-soul",
@@ -70,7 +73,7 @@
       "default_bpm": 174.0,
       "mode": "minor",
       "tonic_pc": 0,
-      "updated_at": "2026-11-22T22:31:21Z"
+      "updated_at": "2026-11-23T13:38:08Z"
     },
     {
       "id": "melodic_house",
@@ -84,7 +87,7 @@
       "default_bpm": 124.0,
       "mode": "minor",
       "tonic_pc": 0,
-      "updated_at": "2026-11-22T22:31:21Z"
+      "updated_at": "2026-11-23T13:38:08Z"
     },
     {
       "id": "neo_soul",
@@ -98,7 +101,7 @@
       "default_bpm": 88.0,
       "mode": "dorian",
       "tonic_pc": 7,
-      "updated_at": "2026-11-22T22:31:21Z"
+      "updated_at": "2026-11-23T13:38:08Z"
     },
     {
       "id": "neuro_dnb",
@@ -112,7 +115,25 @@
       "default_bpm": 174.0,
       "mode": "phrygian",
       "tonic_pc": 0,
-      "updated_at": "2026-11-22T22:31:21Z"
+      "updated_at": "2026-11-23T13:38:08Z"
+    },
+    {
+      "id": "r_b",
+      "name": "R&B",
+      "genre": "R&B",
+      "description": "Offline deconstructed R&B from 9 track(s) via offline_MuScriptor (CPU) [genre: vorbis]",
+      "file": "styles/r_b.json",
+      "sha256": "4c02ac204a8d821a7602d08b2c5f29b00c666d31968035e1e74d22c084166f08",
+      "bpm_min": 103.0,
+      "bpm_max": 193.0,
+      "default_bpm": 149.88888888888889,
+      "mode": "dorian",
+      "tonic_pc": 4,
+      "updated_at": "2026-11-23T13:38:08Z",
+      "tags": [
+        "r&b"
+      ],
+      "genre_source": "vorbis"
     },
     {
       "id": "trap",
@@ -126,7 +147,7 @@
       "default_bpm": 140.0,
       "mode": "phrygian",
       "tonic_pc": 0,
-      "updated_at": "2026-11-22T22:31:21Z"
+      "updated_at": "2026-11-23T13:38:08Z"
     }
   ]
 }
