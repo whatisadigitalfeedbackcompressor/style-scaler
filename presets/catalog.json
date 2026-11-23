@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "catalog_name": "StyleScaler Preset Catalog",
-  "updated_at": "2026-11-23T13:38:08Z",
+  "updated_at": "2026-11-23T13:45:54Z",
   "genres": {
     "Drum & Bass": [
       "liquid_dnb",
@@ -39,7 +39,7 @@
       "default_bpm": 92.0,
       "mode": "dorian",
       "tonic_pc": 0,
-      "updated_at": "2026-11-23T13:38:08Z"
+      "updated_at": "2026-11-23T13:45:54Z"
     },
     {
       "id": "funk_disco",
@@ -53,7 +53,7 @@
       "default_bpm": 147.1818181818182,
       "mode": "minor",
       "tonic_pc": 7,
-      "updated_at": "2026-11-23T13:38:08Z",
+      "updated_at": "2026-11-23T13:45:54Z",
       "tags": [
         "funk / disco",
         "r&b / neo-soul",
@@ -73,7 +73,7 @@
       "default_bpm": 174.0,
       "mode": "minor",
       "tonic_pc": 0,
-      "updated_at": "2026-11-23T13:38:08Z"
+      "updated_at": "2026-11-23T13:45:54Z"
     },
     {
       "id": "melodic_house",
@@ -87,7 +87,7 @@
       "default_bpm": 124.0,
       "mode": "minor",
       "tonic_pc": 0,
-      "updated_at": "2026-11-23T13:38:08Z"
+      "updated_at": "2026-11-23T13:45:54Z"
     },
     {
       "id": "neo_soul",
@@ -101,7 +101,7 @@
       "default_bpm": 88.0,
       "mode": "dorian",
       "tonic_pc": 7,
-      "updated_at": "2026-11-23T13:38:08Z"
+      "updated_at": "2026-11-23T13:45:54Z"
     },
     {
       "id": "neuro_dnb",
@@ -115,7 +115,7 @@
       "default_bpm": 174.0,
       "mode": "phrygian",
       "tonic_pc": 0,
-      "updated_at": "2026-11-23T13:38:08Z"
+      "updated_at": "2026-11-23T13:45:54Z"
     },
     {
       "id": "r_b",
@@ -129,7 +129,7 @@
       "default_bpm": 149.88888888888889,
       "mode": "dorian",
       "tonic_pc": 4,
-      "updated_at": "2026-11-23T13:38:08Z",
+      "updated_at": "2026-11-23T13:45:54Z",
       "tags": [
         "r&b"
       ],
@@ -139,15 +139,18 @@
       "id": "trap",
       "name": "Modern Dark Trap",
       "genre": "Trap",
-      "description": "Phrygian/Aeolian sparse dark pads, deep 808 sub patterns, eerie upper bells",
+      "description": "Offline deconstructed Trap from 7 track(s) via offline_MuScriptor (CPU)",
       "file": "styles/trap.json",
-      "sha256": "ed5cbfb2180a9c4298085b85079c3336fe0814bff61db22959c5b4440a37e08e",
+      "sha256": "f8309790cb17ef43eb457d3bbd8b0428541c50065a28ccdf263beceef23370d7",
       "bpm_min": 130.0,
-      "bpm_max": 150.0,
-      "default_bpm": 140.0,
+      "bpm_max": 163.0,
+      "default_bpm": 142.14285714285714,
       "mode": "phrygian",
       "tonic_pc": 0,
-      "updated_at": "2026-11-23T13:38:08Z"
+      "updated_at": "2026-11-23T13:45:54Z",
+      "tags": [
+        "trap"
+      ]
     }
   ]
 }
