@@ -639,3 +639,42 @@ TEST_CASE("TranscriptionService::decodeAudioFileTo16kMono multi-window Intro/Cho
 
     tmpDir.deleteRecursively();
 }
+
+TEST_CASE("Unicode non-CP1252 filenames (fullwidth question mark & curly apostrophe) deconstruct without throwing", "[unicode][transcription]") {
+    const juce::File tmpDir = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                                  .getChildFile("style_scaler_unicode_test")
+                                  .getChildFile("olivia_rodrigo_guts");
+    tmpDir.deleteRecursively();
+    tmpDir.createDirectory();
+
+    const juce::String unicodeName = juce::String::fromUTF8("02 - bad idea right\xEF\xBC\x9F_isn\xE2\x80\x99t.mid");
+    const juce::File midFile = tmpDir.getChildFile(unicodeName);
+#ifdef _WIN32
+    const std::filesystem::path fsPath(midFile.getFullPathName().toWideCharPointer());
+#else
+    const std::filesystem::path fsPath(midFile.getFullPathName().toStdString());
+#endif
+
+    std::vector<NoteEvent> notes = {
+        {0.0, 2.0, 60, 96, 1, false, 0},
+        {0.0, 2.0, 64, 96, 1, false, 0},
+        {0.0, 2.0, 67, 96, 1, false, 0},
+        {2.0, 2.0, 65, 96, 1, false, 0},
+        {2.0, 2.0, 69, 96, 1, false, 0},
+        {2.0, 2.0, 72, 96, 1, false, 0}
+    };
+    REQUIRE(SmfWriter::writeType1(fsPath, 140.0, 4, 4, notes).has_value());
+
+    const auto meta = AudioMetadataReader::readFile(fsPath);
+    CHECK(meta.canonical_genre == "Pop / Rock");
+
+    ModelManager mm;
+    TranscriptionService tx(mm);
+    TranscriptionService::DeconstructOptions opts;
+    const auto ds = tx.deconstructFileBlocking(midFile, opts);
+    REQUIRE(ds.success);
+    CHECK(ds.song_input.notes.size() == notes.size());
+    CHECK(ds.metadata.canonical_genre == "Pop / Rock");
+
+    tmpDir.getParentDirectory().deleteRecursively();
+}

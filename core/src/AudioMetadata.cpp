@@ -116,6 +116,11 @@ std::string toLowerAscii(std::string_view sv) {
     return out;
 }
 
+std::string pathToUtf8(const std::filesystem::path& p) {
+    const auto u8 = p.u8string();
+    return std::string(reinterpret_cast<const char*>(u8.data()), u8.size());
+}
+
 std::string trimAscii(std::string_view sv) {
     size_t a = 0;
     while (a < sv.size() && (std::isspace(static_cast<unsigned char>(sv[a])) || sv[a] == '\0')) ++a;
@@ -297,6 +302,11 @@ constexpr GenreAlias kGenreAliases[] = {
     {"bebop", "Jazz"},
     {"jazz", "Jazz"},
 
+    {"pop rock", "Pop / Rock"},
+    {"pop punk", "Pop / Rock"},
+    {"olivia rodrigo", "Pop / Rock"},
+    {"michael jackson", "R&B"},
+    {"victoria monet", "Funk / Disco"},
     {"indie rock", "Indie Rock"},
     {"alt rock", "Alternative Rock"},
     {"alternative rock", "Alternative Rock"},
@@ -1298,11 +1308,11 @@ std::string AudioMetadataReader::detectGenreFromPath(const std::filesystem::path
     // Inspect filename stem first, then up to 3 enclosing parent folders
     std::vector<std::string> candidates;
     if (path.has_stem()) {
-        candidates.push_back(normalizeMatchKey(path.stem().string()));
+        candidates.push_back(normalizeMatchKey(pathToUtf8(path.stem())));
     }
     auto cur = path.parent_path();
     for (int depth = 0; depth < 3 && !cur.empty() && cur.has_filename(); ++depth) {
-        candidates.push_back(normalizeMatchKey(cur.filename().string()));
+        candidates.push_back(normalizeMatchKey(pathToUtf8(cur.filename())));
         cur = cur.parent_path();
     }
 
@@ -1380,13 +1390,17 @@ std::string AudioMetadataReader::inferGenreFromProfileHeuristic(const StyleProfi
         return "Liquid DnB";
     }
     if (bpm >= 136.0 && bpm < 162.0) {
-        if (p.rhythm.syncopation >= 0.42 || p.voicing.sub_bass_clearance_midi >= 46) {
+        if (p.harmony.mode == Mode::Phrygian || p.harmony.mode == Mode::Locrian ||
+            (p.harmony.mode == Mode::Minor && p.voicing.extension_richness < 0.35 && p.rhythm.syncopation >= 0.42)) {
             return "Trap";
+        }
+        if (p.harmony.mode == Mode::Major || p.harmony.mode == Mode::Mixolydian || p.harmony.mode == Mode::Dorian) {
+            return "Pop / Rock";
         }
         if (bpm <= 145.0 && p.rhythm.syncopation < 0.30) {
             return "Techno";
         }
-        return "Dubstep";
+        return "Pop / Rock";
     }
     if (bpm >= 129.0 && bpm < 136.0) {
         return (p.rhythm.swing >= 0.14 || p.rhythm.syncopation >= 0.38) ? "UK Garage" : "Techno";
@@ -1438,7 +1452,7 @@ SongMetadata AudioMetadataReader::readFile(const std::filesystem::path& path) {
     std::error_code ec;
     if (!std::filesystem::is_regular_file(path, ec)) return meta;
 
-    const std::string extLower = toLowerAscii(path.extension().string());
+    const std::string extLower = toLowerAscii(pathToUtf8(path.extension()));
     ByteSource src(path);
     dispatchMetadataParse(src, extLower, meta);
 
@@ -1454,7 +1468,7 @@ SongMetadata AudioMetadataReader::readFile(const std::filesystem::path& path) {
         }
     }
     if (meta.title.empty() && path.has_stem()) {
-        meta.title = path.stem().string();
+        meta.title = pathToUtf8(path.stem());
     }
     return meta;
 }

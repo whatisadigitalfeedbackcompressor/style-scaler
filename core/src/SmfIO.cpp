@@ -248,12 +248,16 @@ std::expected<void, std::string> SmfWriter::writeType1(
     }
 
     std::ofstream ofs(path, std::ios::binary);
+    auto u8Path = [](const std::filesystem::path& p) {
+        const auto u8 = p.u8string();
+        return std::string(reinterpret_cast<const char*>(u8.data()), u8.size());
+    };
     if (!ofs) {
-        return std::unexpected("Unable to open MIDI file for writing: " + path.string());
+        return std::unexpected("Unable to open MIDI file for writing: " + u8Path(path));
     }
     ofs.write(reinterpret_cast<const char*>(fileBytes.data()), static_cast<std::streamsize>(fileBytes.size()));
     if (!ofs) {
-        return std::unexpected("Failed writing MIDI file: " + path.string());
+        return std::unexpected("Failed writing MIDI file: " + u8Path(path));
     }
     return {};
 }
@@ -279,18 +283,22 @@ std::expected<void, std::string> SmfWriter::writeFilteredType1(
 }
 
 std::expected<SmfReadResult, std::string> SmfReader::readFile(const std::filesystem::path& path) {
+    auto u8Path = [](const std::filesystem::path& p) {
+        const auto u8 = p.u8string();
+        return std::string(reinterpret_cast<const char*>(u8.data()), u8.size());
+    };
     std::ifstream ifs(path, std::ios::binary | std::ios::ate);
     if (!ifs) {
-        return std::unexpected("Unable to open MIDI file: " + path.string());
+        return std::unexpected("Unable to open MIDI file: " + u8Path(path));
     }
     const auto sz = ifs.tellg();
     if (sz <= 0) {
-        return std::unexpected("Empty MIDI file: " + path.string());
+        return std::unexpected("Empty MIDI file: " + u8Path(path));
     }
     ifs.seekg(0, std::ios::beg);
     std::vector<uint8_t> data(static_cast<size_t>(sz));
     if (!ifs.read(reinterpret_cast<char*>(data.data()), sz)) {
-        return std::unexpected("Failed reading MIDI file: " + path.string());
+        return std::unexpected("Failed reading MIDI file: " + u8Path(path));
     }
     return readMemory(data.data(), data.size());
 }

@@ -329,8 +329,12 @@ TranscriptionService::DeconstructedSong TranscriptionService::deconstructFileBlo
         return out;
     }
 
-    const SongMetadata meta = AudioMetadataReader::readFile(
-        std::filesystem::path(file.getFullPathName().toStdString()));
+#ifdef _WIN32
+    const std::filesystem::path fsPath(file.getFullPathName().toWideCharPointer());
+#else
+    const std::filesystem::path fsPath(file.getFullPathName().toStdString());
+#endif
+    const SongMetadata meta = AudioMetadataReader::readFile(fsPath);
 
     DeconstructOptions effectiveOpts = opts;
     if (effectiveOpts.bpm_hint <= 20.0 && meta.bpm > 20.0) {
@@ -342,7 +346,7 @@ TranscriptionService::DeconstructedSong TranscriptionService::deconstructFileBlo
             out.error = "Cancelled";
             return out;
         }
-        auto smf = SmfReader::readFile(file.getFullPathName().toStdString());
+        auto smf = SmfReader::readFile(fsPath);
         if (!smf) {
             out.error = smf.error();
             return out;

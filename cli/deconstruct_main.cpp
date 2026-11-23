@@ -83,8 +83,26 @@ void printUsage() {
         "  --no-cache              Disable per-song transcription checkpoint cache\n";
 }
 
+std::string pathToUtf8(const fs::path& p) {
+    const auto u8 = p.u8string();
+    return std::string(reinterpret_cast<const char*>(u8.data()), u8.size());
+}
+
+std::string pathToGenericUtf8(const fs::path& p) {
+    const auto u8 = p.generic_u8string();
+    return std::string(reinterpret_cast<const char*>(u8.data()), u8.size());
+}
+
+juce::File pathToJuceFile(const fs::path& p) {
+#ifdef _WIN32
+    return juce::File(juce::String(p.c_str()));
+#else
+    return juce::File(juce::String::fromUTF8(pathToUtf8(p).c_str()));
+#endif
+}
+
 bool isSupportedMediaFile(const fs::path& p) {
-    auto ext = p.extension().string();
+    auto ext = pathToUtf8(p.extension());
     std::transform(ext.begin(), ext.end(), ext.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return ext == ".wav" || ext == ".aif" || ext == ".aiff" ||
@@ -153,11 +171,11 @@ std::string computeFileFingerprint(const fs::path& p, double maxSeconds, bool fo
     const auto fsize = fs::file_size(p, ec);
     const auto ftime = fs::last_write_time(p, ec).time_since_epoch().count();
     std::ostringstream keySeed;
-    keySeed << p.filename().string() << "|" << fsize << "|" << ftime
+    keySeed << pathToUtf8(p.filename()) << "|" << fsize << "|" << ftime
             << "|ms=" << static_cast<int>(std::llround(maxSeconds * 10.0))
             << "|sp=" << (forceSpectral ? 1 : 0);
     if (!ec && fsize > 0 && fsize <= 64ULL * 1024ULL * 1024ULL) {
-        const juce::String fileSha = juce::SHA256(juce::File(p.string())).toHexString().toLowerCase();
+        const juce::String fileSha = juce::SHA256(pathToJuceFile(p)).toHexString().toLowerCase();
         keySeed << "|sha=" << fileSha.toStdString();
     }
     const std::string seedStr = keySeed.str();
@@ -307,12 +325,12 @@ bool writeCatalogFromDir(const fs::path& stylesDir, const fs::path& catalogPath)
         auto prof = loadFromFile(jf);
         if (!prof) continue;
 
-        const juce::File jFile(jf.string());
+        const juce::File jFile = pathToJuceFile(jf);
         const std::string sha = juce::SHA256(jFile).toHexString().toLowerCase().toStdString();
 
         std::error_code ec;
         fs::path rel = fs::relative(jf, catParent, ec);
-        std::string relStr = (ec ? jf.filename().string() : rel.generic_string());
+        std::string relStr = (ec ? pathToUtf8(jf.filename()) : pathToGenericUtf8(rel));
 
         nlohmann::json item = {
             {"id", prof->id},
@@ -525,7 +543,7 @@ int main(int argc, char* argv[]) {
     ModelManager modelManager;
     if (modelPath.has_value()) {
         std::string err;
-        if (!modelManager.setCustomModelFile(juce::File(modelPath->string()), err)) {
+        if (!modelManager.setCustomModelFile(pathToJuceFile(*modelPath), err)) {
             std::cerr << "Model error: " << err << "\n";
             return 1;
         }
@@ -632,7 +650,7 @@ int main(int argc, char* argv[]) {
         normalizeProfileDistributions(finalProf);
 
         if (auto saveRes = saveToFile(finalProf, destJson); !saveRes) {
-            std::cerr << "  Error writing " << destJson.string() << ": " << saveRes.error() << "\n";
+            std::cerr << "  Error writing " << pathToUtf8(destJson) << ": " << saveRes.error() << "\n";
             return false;
         }
         return true;
@@ -661,6 +679,12 @@ int main(int argc, char* argv[]) {
             for (const auto& fp : fingerprints) {
                 const fs::path cacheFile = cacheDir / (fp + ".json");
                 if (loadCachedSong(cacheFile, ds)) {
+                    if (!ds.metadata.hasGenre()) {
+                        const auto freshMeta = AudioMetadataReader::readFile(f);
+                        if (freshMeta.hasGenre()) {
+                            ds.metadata = freshMeta;
+                        }
+                    }
                     outFromCache = true;
                     outTrackSec = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
                     return ds;
@@ -673,7 +697,7 @@ int main(int argc, char* argv[]) {
         const int minPctStep = tty ? 1 : 3;
         auto lastPrint = std::chrono::steady_clock::now() - std::chrono::milliseconds(200);
         ds = txService.deconstructFileBlocking(
-            juce::File(f.string()), dopts,
+            pathToJuceFile(f), dopts,
             [&](float trackProg, std::string stage) -> bool {
                 if (g_stopRequested.load(std::memory_order_acquire)) {
                     txService.cancel();
@@ -686,7 +710,7 @@ int main(int argc, char* argv[]) {
                     lastPct = pct;
                     lastPrint = now;
                     const double elapsed = std::chrono::duration<double>(now - batchStart).count();
-                    renderProgressLine(idx, total, f.filename().string(), trackProg, stage, elapsed);
+                    renderProgressLine(idx, total, pathToUtf8(f.filename()), trackProg, stage, elapsed);
                 }
                 return true;
             });
@@ -740,7 +764,7 @@ int main(int argc, char* argv[]) {
                 }
                 if (alreadyPresent) {
                     std::cout << "  ✓ [" << (idx + 1) << "/" << allFiles.size() << "] "
-                              << f.filename().string() << " | [SKIP - already in profile]\n";
+                              << pathToUtf8(f.filename()) << " | [SKIP - already in profile]\n";
                     ++completedTracks;
                     continue;
                 }
@@ -756,12 +780,12 @@ int main(int argc, char* argv[]) {
             }
             if (!ds.success) {
                 std::cout << "  - [" << (idx + 1) << "/" << allFiles.size() << "] "
-                          << f.filename().string() << " | SKIPPED (" << ds.error << ")\n";
+                          << pathToUtf8(f.filename()) << " | SKIPPED (" << ds.error << ")\n";
                 continue;
             }
 
             if (saveMidiDir.has_value()) {
-                const fs::path midOut = *saveMidiDir / (sanitizeSlug(f.stem().string()) + ".mid");
+                const fs::path midOut = *saveMidiDir / (sanitizeSlug(pathToUtf8(f.stem())) + ".mid");
                 (void)SmfWriter::writeType1(midOut, ds.song_input.bpm,
                                             ds.song_input.time_sig_num, ds.song_input.time_sig_den,
                                             ds.song_input.notes);
@@ -783,7 +807,12 @@ int main(int argc, char* argv[]) {
                 detectedSource = "heuristic";
             }
 
-            const std::string slug = AudioMetadataReader::sanitizeGenreSlug(detectedGenre);
+            std::string slug = AudioMetadataReader::sanitizeGenreSlug(detectedGenre);
+            if (detectedSource == "heuristic" &&
+                (slug == "90s_hiphop" || slug == "trap" || slug == "liquid_dnb" ||
+                 slug == "neuro_dnb" || slug == "neo_soul" || slug == "melodic_house")) {
+                slug += "_deconstructed";
+            }
             const fs::path destJson = destRoot / (slug + ".json");
 
             AnalysisOptions aopts;
@@ -814,7 +843,7 @@ int main(int argc, char* argv[]) {
             }
 
             std::cout << "  ✓ [" << (idx + 1) << "/" << allFiles.size() << "] "
-                      << f.filename().string() << " | " << ds.backend_name
+                      << pathToUtf8(f.filename()) << " | " << ds.backend_name
                       << (fromCache ? " [CACHED]" : "")
                       << " | " << ds.song_input.notes.size() << " notes"
                       << " | " << std::fixed << std::setprecision(1) << ds.song_input.bpm << " BPM"
@@ -841,9 +870,9 @@ int main(int argc, char* argv[]) {
         }
         if (catalogPath.has_value()) {
             if (writeCatalogFromDir(destRoot, *catalogPath)) {
-                std::cout << "Updated catalog: " << catalogPath->string() << "\n";
+                std::cout << "Updated catalog: " << pathToUtf8(*catalogPath) << "\n";
             } else {
-                std::cerr << "Failed writing catalog: " << catalogPath->string() << "\n";
+                std::cerr << "Failed writing catalog: " << pathToUtf8(*catalogPath) << "\n";
                 return 1;
             }
         }
@@ -861,7 +890,7 @@ int main(int argc, char* argv[]) {
                 allFiles.push_back(in);
             }
         }
-        const std::string fallbackStem = inputs.front().stem().string();
+        const std::string fallbackStem = pathToUtf8(inputs.front().stem());
         g.id = !idArg.empty() ? sanitizeSlug(idArg) : sanitizeSlug(fallbackStem);
         g.name = !nameArg.empty() ? nameArg : prettifyTitle(g.id);
         g.genre = !genreArg.empty() ? AudioMetadataReader::canonicalizeGenre(genreArg) : "";
@@ -880,7 +909,7 @@ int main(int argc, char* argv[]) {
                         if (!files.empty()) {
                             hasSubdirs = true;
                             JobGroup g;
-                            g.id = sanitizeSlug(e.path().filename().string());
+                            g.id = sanitizeSlug(pathToUtf8(e.path().filename()));
                             g.name = prettifyTitle(g.id);
                             g.genre = !genreArg.empty() ? AudioMetadataReader::canonicalizeGenre(genreArg) : "";
                             g.explicit_genre = !genreArg.empty();
@@ -894,7 +923,7 @@ int main(int argc, char* argv[]) {
                     auto files = collectRecursive(in);
                     if (!files.empty()) {
                         JobGroup g;
-                        g.id = !idArg.empty() ? sanitizeSlug(idArg) : sanitizeSlug(in.filename().string());
+                        g.id = !idArg.empty() ? sanitizeSlug(idArg) : sanitizeSlug(pathToUtf8(in.filename()));
                         g.name = !nameArg.empty() ? nameArg : prettifyTitle(g.id);
                         g.genre = !genreArg.empty() ? AudioMetadataReader::canonicalizeGenre(genreArg) : "";
                         g.explicit_genre = !genreArg.empty();
@@ -905,7 +934,7 @@ int main(int argc, char* argv[]) {
                 }
             } else if (fs::is_regular_file(in) && isSupportedMediaFile(in)) {
                 JobGroup g;
-                g.id = sanitizeSlug(in.stem().string());
+                g.id = sanitizeSlug(pathToUtf8(in.stem()));
                 g.name = prettifyTitle(g.id);
                 g.genre = !genreArg.empty() ? AudioMetadataReader::canonicalizeGenre(genreArg) : "";
                 g.explicit_genre = !genreArg.empty();
@@ -927,8 +956,8 @@ int main(int argc, char* argv[]) {
         }
         for (const auto& f : allFiles) {
             JobGroup g;
-            g.id = sanitizeSlug(f.stem().string());
-            g.name = prettifyTitle(f.stem().string());
+            g.id = sanitizeSlug(pathToUtf8(f.stem()));
+            g.name = prettifyTitle(pathToUtf8(f.stem()));
             g.genre = !genreArg.empty() ? AudioMetadataReader::canonicalizeGenre(genreArg) : "";
             g.explicit_genre = !genreArg.empty();
             g.destJson = destRoot / (g.id + ".json");
@@ -955,7 +984,7 @@ int main(int argc, char* argv[]) {
 
             if (mergeExisting && profileContainsAnyTrack(job.destJson, fps)) {
                 std::cout << "  ✓ [" << (idx + 1) << "/" << job.files.size() << "] "
-                          << f.filename().string() << " | [SKIP - already in profile]\n";
+                          << pathToUtf8(f.filename()) << " | [SKIP - already in profile]\n";
                 ++completedTracks;
                 continue;
             }
@@ -968,12 +997,12 @@ int main(int argc, char* argv[]) {
             if (g_stopRequested.load(std::memory_order_acquire) && !ds.success) break;
             if (!ds.success) {
                 std::cout << "  - [" << (idx + 1) << "/" << job.files.size() << "] "
-                          << f.filename().string() << " | SKIPPED (" << ds.error << ")\n";
+                          << pathToUtf8(f.filename()) << " | SKIPPED (" << ds.error << ")\n";
                 continue;
             }
 
             if (saveMidiDir.has_value()) {
-                const fs::path midOut = *saveMidiDir / (sanitizeSlug(f.stem().string()) + ".mid");
+                const fs::path midOut = *saveMidiDir / (sanitizeSlug(pathToUtf8(f.stem())) + ".mid");
                 (void)SmfWriter::writeType1(midOut, ds.song_input.bpm,
                                             ds.song_input.time_sig_num, ds.song_input.time_sig_den,
                                             ds.song_input.notes);
@@ -1012,7 +1041,7 @@ int main(int argc, char* argv[]) {
             }
 
             std::cout << "  ✓ [" << (idx + 1) << "/" << job.files.size() << "] "
-                      << f.filename().string() << " | " << ds.backend_name
+                      << pathToUtf8(f.filename()) << " | " << ds.backend_name
                       << (fromCache ? " [CACHED]" : "")
                       << " | " << ds.song_input.notes.size() << " notes"
                       << " | " << std::fixed << std::setprecision(1) << ds.song_input.bpm << " BPM"
@@ -1049,9 +1078,9 @@ int main(int argc, char* argv[]) {
                                                      ? jobs.front().destJson.parent_path()
                                                      : fs::path("."));
         if (writeCatalogFromDir(scanDir, *catalogPath)) {
-            std::cout << "Updated catalog: " << catalogPath->string() << "\n";
+            std::cout << "Updated catalog: " << pathToUtf8(*catalogPath) << "\n";
         } else {
-            std::cerr << "Failed writing catalog: " << catalogPath->string() << "\n";
+            std::cerr << "Failed writing catalog: " << pathToUtf8(*catalogPath) << "\n";
             return 1;
         }
     }

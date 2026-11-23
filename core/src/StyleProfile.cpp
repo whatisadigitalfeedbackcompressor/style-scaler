@@ -637,7 +637,9 @@ std::expected<StyleProfile, std::string> loadFromJsonString(std::string_view jso
 std::expected<StyleProfile, std::string> loadFromFile(const std::filesystem::path& path) {
     std::ifstream ifs(path, std::ios::binary);
     if (!ifs) {
-        return std::unexpected("Unable to open style profile file: " + path.string());
+        const auto u8 = path.u8string();
+        return std::unexpected("Unable to open style profile file: " +
+                               std::string(reinterpret_cast<const char*>(u8.data()), u8.size()));
     }
     std::ostringstream ss;
     ss << ifs.rdbuf();
@@ -653,13 +655,15 @@ std::expected<void, std::string> saveToFile(const StyleProfile& profile, const s
     if (path.has_parent_path()) {
         std::filesystem::create_directories(path.parent_path(), ec);
     }
+    const auto u8 = path.u8string();
+    const std::string pathStr(reinterpret_cast<const char*>(u8.data()), u8.size());
     std::ofstream ofs(path, std::ios::binary);
     if (!ofs) {
-        return std::unexpected("Unable to open file for writing: " + path.string());
+        return std::unexpected("Unable to open file for writing: " + pathStr);
     }
     ofs << toJson(profile).dump(2) << '\n';
     if (!ofs) {
-        return std::unexpected("Failed while writing file: " + path.string());
+        return std::unexpected("Failed while writing file: " + pathStr);
     }
     return {};
 }
