@@ -762,16 +762,16 @@
       "voicing": {
         "bass_register_high": 42,
         "bass_register_low": 25,
-        "center_pitch": 80,
+        "center_pitch": 68,
         "drop2_prob": 0.07142857142857142,
         "extension_richness": 0.0,
         "inversion_prob": 0.4,
         "max_notes": 2,
         "min_notes": 2,
-        "register_high": 80,
-        "register_low": 72,
+        "register_high": 68,
+        "register_low": 60,
         "spread_semitones": 12.0,
-        "sub_bass_clearance_midi": 60,
+        "sub_bass_clearance_midi": 48,
         "voice_leading_tightness": 0.875
       }
     },
@@ -1173,16 +1173,16 @@
       "voicing": {
         "bass_register_high": 42,
         "bass_register_low": 25,
-        "center_pitch": 77,
+        "center_pitch": 65,
         "drop2_prob": 0.0,
         "extension_richness": 0.0,
         "inversion_prob": 0.5,
         "max_notes": 2,
         "min_notes": 2,
-        "register_high": 78,
-        "register_low": 70,
+        "register_high": 67,
+        "register_low": 59,
         "spread_semitones": 9.208333333333334,
-        "sub_bass_clearance_midi": 60,
+        "sub_bass_clearance_midi": 48,
         "voice_leading_tightness": 0.7785714285714286
       }
     },
@@ -1584,16 +1584,16 @@
       "voicing": {
         "bass_register_high": 42,
         "bass_register_low": 25,
-        "center_pitch": 75,
+        "center_pitch": 63,
         "drop2_prob": 0.0,
         "extension_richness": 0.0,
         "inversion_prob": 0.5,
         "max_notes": 2,
         "min_notes": 2,
-        "register_high": 86,
-        "register_low": 70,
+        "register_high": 74,
+        "register_low": 58,
         "spread_semitones": 10.833333333333334,
-        "sub_bass_clearance_midi": 60,
+        "sub_bass_clearance_midi": 48,
         "voice_leading_tightness": 0.7785714285714286
       }
     }
@@ -1610,16 +1610,16 @@
   "voicing": {
     "bass_register_high": 42,
     "bass_register_low": 25,
-    "center_pitch": 75,
+    "center_pitch": 63,
     "drop2_prob": 0.0,
     "extension_richness": 0.0,
     "inversion_prob": 0.5,
     "max_notes": 2,
     "min_notes": 2,
-    "register_high": 86,
-    "register_low": 70,
+    "register_high": 74,
+    "register_low": 58,
     "spread_semitones": 10.833333333333334,
-    "sub_bass_clearance_midi": 60,
+    "sub_bass_clearance_midi": 48,
     "voice_leading_tightness": 0.7785714285714286
   }
 }
