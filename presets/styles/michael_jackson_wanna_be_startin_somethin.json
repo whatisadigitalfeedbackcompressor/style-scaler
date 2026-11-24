@@ -8,76 +8,76 @@
   "genre": "R&B",
   "genre_source": "vorbis",
   "harmony": {
-    "chromaticism": 0.03189910979228492,
-    "mode": "mixolydian",
+    "chromaticism": 0.03264094955489618,
+    "mode": "major",
     "reference_progression": [
-      "bVII",
-      "bVII",
-      "bVIIsus2",
-      "v"
+      "ii7",
+      "ii7",
+      "VIsus2",
+      "I"
     ],
-    "tonic_pc": 4,
+    "tonic_pc": 2,
     "transitions": {
-      "bVII": {
-        "bVII": 0.012385919165580185,
-        "bVIIsus2": 0.9289439374185138,
-        "bVIIsus4": 0.009778357235984355,
-        "v": 0.04889178617992178
+      "I": {
+        "I": 0.007882111034955449,
+        "Isus4": 0.4849211788896504,
+        "VIsus2": 0.005140507196710075,
+        "ii7": 0.5020562028786841
       },
-      "bVIIsus2": {
-        "bVII": 0.059748427672955975,
-        "bVIIsus2": 0.0031446540880503146,
-        "bVIIsus4": 0.009433962264150943,
-        "v": 0.9276729559748428
+      "Isus4": {
+        "I": 0.9334935897435898,
+        "Isus4": 0.0024038461538461535,
+        "VIsus2": 0.012019230769230766,
+        "ii7": 0.052083333333333336
       },
-      "bVIIsus4": {
-        "bVII": 0.9174679487179487,
-        "bVIIsus2": 0.02003205128205128,
-        "bVIIsus4": 0.0024038461538461535,
-        "v": 0.06009615384615384
+      "VIsus2": {
+        "I": 0.9480600750938674,
+        "Isus4": 0.009386733416770964,
+        "VIsus2": 0.0018773466833541927,
+        "ii7": 0.04067584480600751
       },
-      "v": {
-        "bVII": 0.061290322580645165,
-        "bVIIsus2": 0.01612903225806452,
-        "bVIIsus4": 0.9129032258064517,
-        "v": 0.009677419354838712
+      "ii7": {
+        "I": 0.07381258023106547,
+        "Isus4": 0.00962772785622593,
+        "VIsus2": 0.9082156611039794,
+        "ii7": 0.008344030808729141
       }
     },
     "vocabulary": [
       {
-        "accidental": -1,
+        "accidental": 0,
         "bass_degree_offset": 0,
         "cadence_weight": 0.3333333333333333,
-        "degree": 7,
+        "degree": 1,
         "quality": "maj",
-        "symbol": "bVII",
-        "weight": 0.4523809523809524
+        "symbol": "I",
+        "weight": 0.5476190476190477
       },
       {
         "accidental": 0,
         "bass_degree_offset": 0,
         "cadence_weight": 0.3333333333333333,
-        "degree": 5,
-        "quality": "min",
-        "symbol": "v",
-        "weight": 0.35714285714285715
+        "degree": 2,
+        "quality": "min7",
+        "symbol": "ii7",
+        "weight": 0.30952380952380953
       },
       {
-        "accidental": -1,
-        "bass_degree_offset": 0,
-        "cadence_weight": 0.0,
-        "degree": 7,
-        "quality": "sus2",
-        "symbol": "bVIIsus2",
-        "weight": 0.11904761904761904
-      },
-      {
-        "accidental": -1,
+        "accidental": 0,
         "bass_degree_offset": 0,
         "cadence_weight": 0.3333333333333333,
-        "degree": 7,
+        "degree": 1,
         "quality": "sus4",
-        "symbol": "bVIIsus4",
+        "symbol": "Isus4",
+        "weight": 0.07142857142857142
+      },
+      {
+        "accidental": 0,
+        "bass_degree_offset": 0,
+        "cadence_weight": 0.0,
+        "degree": 6,
+        "quality": "sus2",
+        "symbol": "VIsus2",
         "weight": 0.07142857142857142
       }
     ]
@@ -118,57 +118,45 @@
     "motif_repetition": 0.1,
     "reference_motif": [
       {
-        "ct": false,
-        "deg": -3,
-        "dur": 1.0573333333333252,
-        "step16": 14
-      },
-      {
-        "ct": false,
-        "deg": -3,
-        "dur": 1.0,
-        "step16": 16
-      },
-      {
-        "ct": false,
+        "ct": true,
         "deg": 0,
         "dur": 1.0,
-        "step16": 20
+        "step16": 4
+      },
+      {
+        "ct": false,
+        "deg": 1,
+        "dur": 1.0,
+        "step16": 5
       },
       {
         "ct": true,
-        "deg": 1,
-        "dur": 1.0,
-        "step16": 21
-      },
-      {
-        "ct": false,
         "deg": 0,
         "dur": 1.0573333333333252,
-        "step16": 24
+        "step16": 8
       },
       {
         "ct": true,
         "deg": 1,
         "dur": 2.0333333333333337,
-        "step16": 26
+        "step16": 10
       },
       {
         "ct": true,
         "deg": -4,
         "dur": 1.0573333333333252,
-        "step16": 30
+        "step16": 14
       },
       {
         "ct": true,
         "deg": -4,
         "dur": 1.0,
-        "step16": 31
+        "step16": 16
       }
     ],
     "register_high": 74,
     "register_low": 66,
-    "tension_tone_ratio": 0.45454545454545453
+    "tension_tone_ratio": 0.18181818181818182
   },
   "name": "Wanna Be Startin' Somethin'",
   "processed_tracks": [
@@ -197,18 +185,36 @@
     "bass_pattern": [
       0.0,
       0.0,
+      0.92,
+      0.0,
+      0.92,
+      0.0,
+      0.92,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
       1.0,
+      1.0,
+      0.0,
+      1.0
+    ],
+    "bass_pattern_bar2": [
+      0.92,
       0.0,
       1.0,
       0.0,
       1.0,
       0.0,
+      1.0,
+      0.92,
       0.0,
       1.0,
       0.0,
       0.0,
-      1.0,
-      1.0,
+      0.0,
+      0.0,
       0.0,
       0.0
     ],
@@ -231,7 +237,25 @@
       1.0
     ],
     "chord_pattern": [
+      0.8666666666666667,
       0.0,
+      0.0,
+      0.0,
+      0.8666666666666667,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "chord_pattern_bar2": [
+      0.8666666666666667,
       0.0,
       0.0,
       0.0,
@@ -243,12 +267,12 @@
       1.0,
       0.0,
       0.0,
-      1.0,
+      0.0,
       0.0,
       0.0,
       0.0
     ],
-    "harmonic_pacing": 0.4,
+    "harmonic_pacing": 0.5,
     "melody_onset_grid": [
       0.4,
       0.0,
@@ -294,76 +318,76 @@
   "sections": {
     "chorus": {
       "harmony": {
-        "chromaticism": 0.03189910979228492,
-        "mode": "mixolydian",
+        "chromaticism": 0.03264094955489618,
+        "mode": "major",
         "reference_progression": [
-          "bVII",
-          "bVII",
-          "bVIIsus2",
-          "v"
+          "ii7",
+          "ii7",
+          "VIsus2",
+          "I"
         ],
-        "tonic_pc": 4,
+        "tonic_pc": 2,
         "transitions": {
-          "bVII": {
-            "bVII": 0.012385919165580185,
-            "bVIIsus2": 0.9289439374185138,
-            "bVIIsus4": 0.009778357235984355,
-            "v": 0.04889178617992178
+          "I": {
+            "I": 0.007882111034955449,
+            "Isus4": 0.4849211788896504,
+            "VIsus2": 0.005140507196710075,
+            "ii7": 0.5020562028786841
           },
-          "bVIIsus2": {
-            "bVII": 0.059748427672955975,
-            "bVIIsus2": 0.0031446540880503146,
-            "bVIIsus4": 0.009433962264150943,
-            "v": 0.9276729559748428
+          "Isus4": {
+            "I": 0.9334935897435898,
+            "Isus4": 0.0024038461538461535,
+            "VIsus2": 0.012019230769230766,
+            "ii7": 0.052083333333333336
           },
-          "bVIIsus4": {
-            "bVII": 0.9174679487179487,
-            "bVIIsus2": 0.02003205128205128,
-            "bVIIsus4": 0.0024038461538461535,
-            "v": 0.06009615384615384
+          "VIsus2": {
+            "I": 0.9480600750938674,
+            "Isus4": 0.009386733416770964,
+            "VIsus2": 0.0018773466833541927,
+            "ii7": 0.04067584480600751
           },
-          "v": {
-            "bVII": 0.061290322580645165,
-            "bVIIsus2": 0.01612903225806452,
-            "bVIIsus4": 0.9129032258064517,
-            "v": 0.009677419354838712
+          "ii7": {
+            "I": 0.07381258023106547,
+            "Isus4": 0.00962772785622593,
+            "VIsus2": 0.9082156611039794,
+            "ii7": 0.008344030808729141
           }
         },
         "vocabulary": [
           {
-            "accidental": -1,
+            "accidental": 0,
             "bass_degree_offset": 0,
             "cadence_weight": 0.3333333333333333,
-            "degree": 7,
+            "degree": 1,
             "quality": "maj",
-            "symbol": "bVII",
-            "weight": 0.4523809523809524
+            "symbol": "I",
+            "weight": 0.5476190476190477
           },
           {
             "accidental": 0,
             "bass_degree_offset": 0,
             "cadence_weight": 0.3333333333333333,
-            "degree": 5,
-            "quality": "min",
-            "symbol": "v",
-            "weight": 0.35714285714285715
+            "degree": 2,
+            "quality": "min7",
+            "symbol": "ii7",
+            "weight": 0.30952380952380953
           },
           {
-            "accidental": -1,
-            "bass_degree_offset": 0,
-            "cadence_weight": 0.0,
-            "degree": 7,
-            "quality": "sus2",
-            "symbol": "bVIIsus2",
-            "weight": 0.11904761904761904
-          },
-          {
-            "accidental": -1,
+            "accidental": 0,
             "bass_degree_offset": 0,
             "cadence_weight": 0.3333333333333333,
-            "degree": 7,
+            "degree": 1,
             "quality": "sus4",
-            "symbol": "bVIIsus4",
+            "symbol": "Isus4",
+            "weight": 0.07142857142857142
+          },
+          {
+            "accidental": 0,
+            "bass_degree_offset": 0,
+            "cadence_weight": 0.0,
+            "degree": 6,
+            "quality": "sus2",
+            "symbol": "VIsus2",
             "weight": 0.07142857142857142
           }
         ]
@@ -403,57 +427,45 @@
         "motif_repetition": 0.1,
         "reference_motif": [
           {
-            "ct": false,
-            "deg": -3,
-            "dur": 1.0573333333333252,
-            "step16": 14
-          },
-          {
-            "ct": false,
-            "deg": -3,
-            "dur": 1.0,
-            "step16": 16
-          },
-          {
-            "ct": false,
+            "ct": true,
             "deg": 0,
             "dur": 1.0,
-            "step16": 20
+            "step16": 4
+          },
+          {
+            "ct": false,
+            "deg": 1,
+            "dur": 1.0,
+            "step16": 5
           },
           {
             "ct": true,
-            "deg": 1,
-            "dur": 1.0,
-            "step16": 21
-          },
-          {
-            "ct": false,
             "deg": 0,
             "dur": 1.0573333333333252,
-            "step16": 24
+            "step16": 8
           },
           {
             "ct": true,
             "deg": 1,
             "dur": 2.0333333333333337,
-            "step16": 26
+            "step16": 10
           },
           {
             "ct": true,
             "deg": -4,
             "dur": 1.0573333333333252,
-            "step16": 30
+            "step16": 14
           },
           {
             "ct": true,
             "deg": -4,
             "dur": 1.0,
-            "step16": 31
+            "step16": 16
           }
         ],
         "register_high": 74,
         "register_low": 66,
-        "tension_tone_ratio": 0.45454545454545453
+        "tension_tone_ratio": 0.18181818181818182
       },
       "rhythm": {
         "anticipation": 0.4545454545454546,
@@ -478,18 +490,36 @@
         "bass_pattern": [
           0.0,
           0.0,
+          0.92,
+          0.0,
+          0.92,
+          0.0,
+          0.92,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
           1.0,
+          1.0,
+          0.0,
+          1.0
+        ],
+        "bass_pattern_bar2": [
+          0.92,
           0.0,
           1.0,
           0.0,
           1.0,
           0.0,
+          1.0,
+          0.92,
           0.0,
           1.0,
           0.0,
           0.0,
-          1.0,
-          1.0,
+          0.0,
+          0.0,
           0.0,
           0.0
         ],
@@ -512,7 +542,25 @@
           1.0
         ],
         "chord_pattern": [
+          0.8666666666666667,
           0.0,
+          0.0,
+          0.0,
+          0.8666666666666667,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "chord_pattern_bar2": [
+          0.8666666666666667,
           0.0,
           0.0,
           0.0,
@@ -524,12 +572,12 @@
           1.0,
           0.0,
           0.0,
-          1.0,
+          0.0,
           0.0,
           0.0,
           0.0
         ],
-        "harmonic_pacing": 0.4,
+        "harmonic_pacing": 0.5,
         "melody_onset_grid": [
           0.4,
           0.0,
@@ -577,7 +625,7 @@
         "center_pitch": 62,
         "drop2_prob": 0.0,
         "extension_richness": 0.0,
-        "inversion_prob": 0.75,
+        "inversion_prob": 1.0,
         "max_notes": 3,
         "min_notes": 3,
         "register_high": 68,
@@ -589,77 +637,77 @@
     },
     "intro": {
       "harmony": {
-        "chromaticism": 0.03189910979228492,
-        "mode": "mixolydian",
+        "chromaticism": 0.03264094955489618,
+        "mode": "major",
         "reference_progression": [
-          "bVII",
-          "bVII",
-          "bVIIsus2",
-          "v"
+          "ii7",
+          "ii7",
+          "VIsus2",
+          "I"
         ],
-        "tonic_pc": 4,
+        "tonic_pc": 2,
         "transitions": {
-          "bVII": {
-            "bVII": 0.012385919165580185,
-            "bVIIsus2": 0.9289439374185138,
-            "bVIIsus4": 0.009778357235984355,
-            "v": 0.04889178617992178
+          "I": {
+            "I": 0.007882111034955449,
+            "Isus4": 0.4849211788896504,
+            "VIsus2": 0.005140507196710075,
+            "ii7": 0.5020562028786841
           },
-          "bVIIsus2": {
-            "bVII": 0.059748427672955975,
-            "bVIIsus2": 0.0031446540880503146,
-            "bVIIsus4": 0.009433962264150943,
-            "v": 0.9276729559748428
+          "Isus4": {
+            "I": 0.9334935897435898,
+            "Isus4": 0.0024038461538461535,
+            "VIsus2": 0.012019230769230766,
+            "ii7": 0.052083333333333336
           },
-          "bVIIsus4": {
-            "bVII": 0.9174679487179487,
-            "bVIIsus2": 0.02003205128205128,
-            "bVIIsus4": 0.0024038461538461535,
-            "v": 0.06009615384615384
+          "VIsus2": {
+            "I": 0.9480600750938674,
+            "Isus4": 0.009386733416770964,
+            "VIsus2": 0.0018773466833541927,
+            "ii7": 0.04067584480600751
           },
-          "v": {
-            "bVII": 0.061290322580645165,
-            "bVIIsus2": 0.01612903225806452,
-            "bVIIsus4": 0.9129032258064517,
-            "v": 0.009677419354838712
+          "ii7": {
+            "I": 0.07381258023106547,
+            "Isus4": 0.00962772785622593,
+            "VIsus2": 0.9082156611039794,
+            "ii7": 0.008344030808729141
           }
         },
         "vocabulary": [
           {
-            "accidental": -1,
+            "accidental": 0,
             "bass_degree_offset": 0,
             "cadence_weight": 0.3333333333333333,
-            "degree": 7,
+            "degree": 1,
             "quality": "maj",
-            "symbol": "bVII",
-            "weight": 0.4523809523809524
+            "symbol": "I",
+            "weight": 0.6272727272727273
           },
           {
             "accidental": 0,
             "bass_degree_offset": 0,
             "cadence_weight": 0.3333333333333333,
-            "degree": 5,
-            "quality": "min",
-            "symbol": "v",
-            "weight": 0.35714285714285715
+            "degree": 2,
+            "quality": "min7",
+            "symbol": "ii7",
+            "weight": 0.23636363636363636
           },
           {
-            "accidental": -1,
-            "bass_degree_offset": 0,
-            "cadence_weight": 0.0,
-            "degree": 7,
-            "quality": "sus2",
-            "symbol": "bVIIsus2",
-            "weight": 0.11904761904761904
-          },
-          {
-            "accidental": -1,
+            "accidental": 0,
             "bass_degree_offset": 0,
             "cadence_weight": 0.3333333333333333,
-            "degree": 7,
+            "degree": 1,
             "quality": "sus4",
-            "symbol": "bVIIsus4",
-            "weight": 0.07142857142857142
+            "symbol": "Isus4",
+            "weight": 0.08181818181818182
+          },
+          {
+            "accidental": 0,
+            "bass_degree_offset": 0,
+            "cadence_weight": 0.0,
+            "degree": 6,
+            "quality": "sus2",
+            "symbol": "VIsus2",
+            "weight": 0.05454545454545454
           }
         ]
       },
@@ -698,57 +746,45 @@
         "motif_repetition": 0.1,
         "reference_motif": [
           {
-            "ct": false,
-            "deg": -3,
-            "dur": 1.0573333333333252,
-            "step16": 14
-          },
-          {
-            "ct": false,
-            "deg": -3,
-            "dur": 1.0,
-            "step16": 16
-          },
-          {
-            "ct": false,
+            "ct": true,
             "deg": 0,
             "dur": 1.0,
-            "step16": 20
+            "step16": 4
+          },
+          {
+            "ct": false,
+            "deg": 1,
+            "dur": 1.0,
+            "step16": 5
           },
           {
             "ct": true,
-            "deg": 1,
-            "dur": 1.0,
-            "step16": 21
-          },
-          {
-            "ct": false,
             "deg": 0,
             "dur": 1.0573333333333252,
-            "step16": 24
+            "step16": 8
           },
           {
             "ct": true,
             "deg": 1,
             "dur": 2.0333333333333337,
-            "step16": 26
+            "step16": 10
           },
           {
             "ct": true,
             "deg": -4,
             "dur": 1.0573333333333252,
-            "step16": 30
+            "step16": 14
           },
           {
             "ct": true,
             "deg": -4,
             "dur": 1.0,
-            "step16": 31
+            "step16": 16
           }
         ],
         "register_high": 74,
         "register_low": 66,
-        "tension_tone_ratio": 0.45454545454545453
+        "tension_tone_ratio": 0.18181818181818182
       },
       "rhythm": {
         "anticipation": 0.4545454545454546,
@@ -770,21 +806,21 @@
           0.0,
           0.35
         ],
-        "bass_pattern": [
+        "bass_pattern_bar2": [
+          0.92,
           0.0,
           0.0,
-          1.0,
-          0.0,
-          1.0,
-          0.0,
-          1.0,
           0.0,
           0.0,
-          1.0,
           0.0,
           0.0,
-          1.0,
-          1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
           0.0,
           0.0
         ],
@@ -807,24 +843,42 @@
           1.0
         ],
         "chord_pattern": [
+          0.8666666666666667,
           0.0,
           0.0,
           0.0,
           0.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          0.0,
-          1.0,
           0.0,
           0.0,
-          1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
           0.0,
           0.0,
           0.0
         ],
-        "harmonic_pacing": 0.25,
+        "chord_pattern_bar2": [
+          0.8666666666666667,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "harmonic_pacing": 0.5,
         "melody_onset_grid": [
           0.22000000000000003,
           0.0,
@@ -858,11 +912,11 @@
           0.0,
           0.0,
           0.0,
-          1.0,
+          0.45,
           0.0
         ],
         "subdivision": 16,
-        "sustain_ratio": 0.5612000000000047,
+        "sustain_ratio": 0.8424,
         "swing": 0.29150320049556194,
         "syncopation": 0.4507608695652174
       },
@@ -872,11 +926,11 @@
         "center_pitch": 64,
         "drop2_prob": 0.0,
         "extension_richness": 0.0,
-        "inversion_prob": 0.75,
+        "inversion_prob": 1.0,
         "max_notes": 3,
         "min_notes": 3,
         "register_high": 68,
-        "register_low": 61,
+        "register_low": 60,
         "spread_semitones": 7.6499999999999995,
         "sub_bass_clearance_midi": 57,
         "voice_leading_tightness": 0.948051948051948
@@ -884,77 +938,77 @@
     },
     "outro": {
       "harmony": {
-        "chromaticism": 0.03189910979228492,
-        "mode": "mixolydian",
+        "chromaticism": 0.03264094955489618,
+        "mode": "major",
         "reference_progression": [
-          "bVII",
-          "bVII",
-          "bVIIsus2",
-          "v"
+          "ii7",
+          "ii7",
+          "VIsus2",
+          "I"
         ],
-        "tonic_pc": 4,
+        "tonic_pc": 2,
         "transitions": {
-          "bVII": {
-            "bVII": 0.012385919165580185,
-            "bVIIsus2": 0.9289439374185138,
-            "bVIIsus4": 0.009778357235984355,
-            "v": 0.04889178617992178
+          "I": {
+            "I": 0.007882111034955449,
+            "Isus4": 0.4849211788896504,
+            "VIsus2": 0.005140507196710075,
+            "ii7": 0.5020562028786841
           },
-          "bVIIsus2": {
-            "bVII": 0.059748427672955975,
-            "bVIIsus2": 0.0031446540880503146,
-            "bVIIsus4": 0.009433962264150943,
-            "v": 0.9276729559748428
+          "Isus4": {
+            "I": 0.9334935897435898,
+            "Isus4": 0.0024038461538461535,
+            "VIsus2": 0.012019230769230766,
+            "ii7": 0.052083333333333336
           },
-          "bVIIsus4": {
-            "bVII": 0.9174679487179487,
-            "bVIIsus2": 0.02003205128205128,
-            "bVIIsus4": 0.0024038461538461535,
-            "v": 0.06009615384615384
+          "VIsus2": {
+            "I": 0.9480600750938674,
+            "Isus4": 0.009386733416770964,
+            "VIsus2": 0.0018773466833541927,
+            "ii7": 0.04067584480600751
           },
-          "v": {
-            "bVII": 0.061290322580645165,
-            "bVIIsus2": 0.01612903225806452,
-            "bVIIsus4": 0.9129032258064517,
-            "v": 0.009677419354838712
+          "ii7": {
+            "I": 0.07381258023106547,
+            "Isus4": 0.00962772785622593,
+            "VIsus2": 0.9082156611039794,
+            "ii7": 0.008344030808729141
           }
         },
         "vocabulary": [
           {
-            "accidental": -1,
+            "accidental": 0,
             "bass_degree_offset": 0,
-            "cadence_weight": 0.3333333333333333,
-            "degree": 7,
+            "cadence_weight": 0.4166666666666667,
+            "degree": 1,
             "quality": "maj",
-            "symbol": "bVII",
-            "weight": 0.4523809523809524
+            "symbol": "I",
+            "weight": 0.6076320939334638
           },
           {
             "accidental": 0,
             "bass_degree_offset": 0,
-            "cadence_weight": 0.3333333333333333,
-            "degree": 5,
-            "quality": "min",
-            "symbol": "v",
-            "weight": 0.35714285714285715
+            "cadence_weight": 0.16666666666666669,
+            "degree": 2,
+            "quality": "min7",
+            "symbol": "ii7",
+            "weight": 0.25440313111545987
           },
           {
-            "accidental": -1,
+            "accidental": 0,
+            "bass_degree_offset": 0,
+            "cadence_weight": 0.4166666666666667,
+            "degree": 1,
+            "quality": "sus4",
+            "symbol": "Isus4",
+            "weight": 0.07925636007827788
+          },
+          {
+            "accidental": 0,
             "bass_degree_offset": 0,
             "cadence_weight": 0.0,
-            "degree": 7,
+            "degree": 6,
             "quality": "sus2",
-            "symbol": "bVIIsus2",
-            "weight": 0.11904761904761904
-          },
-          {
-            "accidental": -1,
-            "bass_degree_offset": 0,
-            "cadence_weight": 0.3333333333333333,
-            "degree": 7,
-            "quality": "sus4",
-            "symbol": "bVIIsus4",
-            "weight": 0.07142857142857142
+            "symbol": "VIsus2",
+            "weight": 0.058708414872798424
           }
         ]
       },
@@ -993,57 +1047,45 @@
         "motif_repetition": 0.1,
         "reference_motif": [
           {
-            "ct": false,
-            "deg": -3,
-            "dur": 1.0573333333333252,
-            "step16": 14
-          },
-          {
-            "ct": false,
-            "deg": -3,
-            "dur": 1.0,
-            "step16": 16
-          },
-          {
-            "ct": false,
+            "ct": true,
             "deg": 0,
             "dur": 1.0,
-            "step16": 20
+            "step16": 4
+          },
+          {
+            "ct": false,
+            "deg": 1,
+            "dur": 1.0,
+            "step16": 5
           },
           {
             "ct": true,
-            "deg": 1,
-            "dur": 1.0,
-            "step16": 21
-          },
-          {
-            "ct": false,
             "deg": 0,
             "dur": 1.0573333333333252,
-            "step16": 24
+            "step16": 8
           },
           {
             "ct": true,
             "deg": 1,
             "dur": 2.0333333333333337,
-            "step16": 26
+            "step16": 10
           },
           {
             "ct": true,
             "deg": -4,
             "dur": 1.0573333333333252,
-            "step16": 30
+            "step16": 14
           },
           {
             "ct": true,
             "deg": -4,
             "dur": 1.0,
-            "step16": 31
+            "step16": 16
           }
         ],
         "register_high": 74,
         "register_low": 66,
-        "tension_tone_ratio": 0.45454545454545453
+        "tension_tone_ratio": 0.18181818181818182
       },
       "rhythm": {
         "anticipation": 0.4545454545454546,
@@ -1068,18 +1110,36 @@
         "bass_pattern": [
           0.0,
           0.0,
-          1.0,
+          0.41400000000000003,
           0.0,
-          1.0,
+          0.41400000000000003,
           0.0,
-          1.0,
-          0.0,
-          0.0,
-          1.0,
+          0.41400000000000003,
           0.0,
           0.0,
-          1.0,
-          1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.45,
+          0.45,
+          0.0,
+          0.45
+        ],
+        "bass_pattern_bar2": [
+          0.92,
+          0.0,
+          0.45,
+          0.0,
+          0.45,
+          0.0,
+          0.45,
+          0.41400000000000003,
+          0.0,
+          0.45,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
           0.0,
           0.0
         ],
@@ -1102,24 +1162,42 @@
           1.0
         ],
         "chord_pattern": [
+          0.8666666666666667,
+          0.0,
+          0.0,
+          0.0,
+          0.39,
           0.0,
           0.0,
           0.0,
           0.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          0.0,
-          1.0,
           0.0,
           0.0,
-          1.0,
+          0.0,
+          0.45,
+          0.45,
+          0.45,
+          0.45
+        ],
+        "chord_pattern_bar2": [
+          0.8666666666666667,
+          0.0,
+          0.0,
+          0.0,
+          0.45,
+          0.45,
+          0.45,
+          0.45,
+          0.0,
+          0.45,
+          0.0,
+          0.0,
+          0.0,
           0.0,
           0.0,
           0.0
         ],
-        "harmonic_pacing": 0.4,
+        "harmonic_pacing": 0.5,
         "melody_onset_grid": [
           0.4,
           0.0,
@@ -1157,7 +1235,7 @@
           0.0
         ],
         "subdivision": 16,
-        "sustain_ratio": 0.5856000000000049,
+        "sustain_ratio": 0.5612000000000047,
         "swing": 0.29150320049556194,
         "syncopation": 0.5201086956521739
       },
@@ -1167,7 +1245,7 @@
         "center_pitch": 62,
         "drop2_prob": 0.0,
         "extension_richness": 0.0,
-        "inversion_prob": 0.75,
+        "inversion_prob": 1.0,
         "max_notes": 3,
         "min_notes": 3,
         "register_high": 68,
@@ -1193,7 +1271,7 @@
     "center_pitch": 62,
     "drop2_prob": 0.0,
     "extension_richness": 0.0,
-    "inversion_prob": 0.75,
+    "inversion_prob": 1.0,
     "max_notes": 3,
     "min_notes": 3,
     "register_high": 68,
