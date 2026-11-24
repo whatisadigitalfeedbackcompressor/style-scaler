@@ -87,7 +87,8 @@ std::pair<int, Mode> detectKeyAndMode(const std::vector<NoteEvent>& notes) {
 
 RomanChord matchChordToRoman(const std::array<double, 12>& windowChroma,
                                int bassPc,
-                               int tonicPc) {
+                               int tonicPc,
+                               Mode mode) {
     static constexpr std::array<ChordQuality, 14> kCandidateQualities = {
         ChordQuality::Maj,
         ChordQuality::Min,
@@ -110,6 +111,12 @@ RomanChord matchChordToRoman(const std::array<double, 12>& windowChroma,
         return RomanChord{1, 0, ChordQuality::Min, 0};
     }
 
+    const auto sc = scaleIntervals(mode);
+    std::array<bool, 12> inScale{};
+    for (int iv : sc) {
+        inScale[static_cast<size_t>(normalizePitchClass(tonicPc + iv))] = true;
+    }
+
     int bestRoot = tonicPc;
     ChordQuality bestQual = ChordQuality::Min;
     double bestScore = -1e9;
@@ -118,8 +125,11 @@ RomanChord matchChordToRoman(const std::array<double, 12>& windowChroma,
         for (ChordQuality q : kCandidateQualities) {
             const auto ivs = chordIntervals(q);
             std::array<bool, 12> inChord{};
+            bool allDiatonic = true;
             for (int iv : ivs) {
-                inChord[static_cast<size_t>(normalizePitchClass(root + iv))] = true;
+                const int pc = normalizePitchClass(root + iv);
+                inChord[static_cast<size_t>(pc)] = true;
+                if (!inScale[static_cast<size_t>(pc)]) allDiatonic = false;
             }
 
             double hit = 0.0;
@@ -135,13 +145,32 @@ RomanChord matchChordToRoman(const std::array<double, 12>& windowChroma,
                 }
             }
 
-            double score = (hit - 0.75 * miss) / totalMass;
-            if (bassPc >= 0 && bassPc == root) {
-                score += 0.25;
+            int missingCoreTones = 0;
+            for (size_t k = 0; k < std::min<size_t>(2, ivs.size()); ++k) {
+                const int pc = normalizePitchClass(root + ivs[k]);
+                if (windowChroma[static_cast<size_t>(pc)] < totalMass * 0.05) {
+                    ++missingCoreTones;
+                }
             }
-            score += 0.06 * static_cast<double>(coveredTones);
-            // Prefer simpler triads/7ths over bloated chords unless extra tones actually sound
-            score -= 0.045 * static_cast<double>(ivs.size());
+            int missingExtTones = 0;
+            for (size_t k = 3; k < ivs.size(); ++k) {
+                const int pc = normalizePitchClass(root + ivs[k]);
+                if (windowChroma[static_cast<size_t>(pc)] < totalMass * 0.08) {
+                    ++missingExtTones;
+                }
+            }
+
+            double score = (hit - 0.85 * miss) / totalMass;
+            if (bassPc >= 0 && bassPc == root) {
+                score += 0.32;
+            }
+            score += 0.04 * static_cast<double>(coveredTones);
+            score -= 0.28 * static_cast<double>(missingCoreTones);
+            score -= 0.22 * static_cast<double>(missingExtTones);
+            score -= 0.065 * static_cast<double>(std::max<int>(0, static_cast<int>(ivs.size()) - 3));
+            if (allDiatonic) {
+                score += 0.10;
+            }
 
             if (score > bestScore) {
                 bestScore = score;
@@ -214,9 +243,12 @@ double disambiguateBpmOctave(double bpm, const AnalysisOptions& options) {
     }
     const bool isDnb = containsAnyToken(meta, {"dnb", "drum & bass", "drum and bass", "jungle", "neuro", "liquid"});
     const bool isHiphop = containsAnyToken(meta, {"90s hip-hop", "hip-hop", "hip hop", "boom-bap", "boom bap", "lo-fi"});
+    const bool isRnbOrGroove = containsAnyToken(meta, {"r&b", "rnb", "neo-soul", "soul", "funk", "disco"});
     if (isDnb && out < 115.0) {
         out = std::clamp(out * 2.0, 40.0, 240.0);
     } else if (isHiphop && out > 142.0) {
+        out = std::clamp(out * 0.5, 40.0, 240.0);
+    } else if (isRnbOrGroove && out > 146.0) {
         out = std::clamp(out * 0.5, 40.0, 240.0);
     }
     return out;
@@ -248,12 +280,18 @@ HarmonyAxis poolHarmonyAxes(const std::vector<std::pair<HarmonyAxis, double>>& i
     std::map<Mode, double> modeWeights;
     double chromSum = 0.0;
     double wSum = 0.0;
+    double bestRefWeight = -1.0;
+    std::vector<std::string> bestRefProg;
 
     for (const auto& [h, wRaw] : items) {
         const double w = std::max(0.01, wRaw);
         wSum += w;
         modeWeights[h.mode] += w;
         chromSum += h.chromaticism * w;
+        if (!h.reference_progression.empty() && w > bestRefWeight) {
+            bestRefWeight = w;
+            bestRefProg = h.reference_progression;
+        }
         for (const auto& v : h.vocabulary) {
             auto& dst = vocabMap[v.symbol];
             dst.symbol = v.symbol;
@@ -283,7 +321,11 @@ HarmonyAxis poolHarmonyAxes(const std::vector<std::pair<HarmonyAxis, double>>& i
     out.tonic_pc = keyOverride.has_value() ? normalizePitchClass(*keyOverride) : fallbackTonicPc;
     out.chromaticism = wSum > 0.0 ? std::clamp(chromSum / wSum, 0.0, 1.0) : 0.15;
 
-    for (const auto& [sym, entry] : vocabMap) {
+    for (auto& [sym, entry] : vocabMap) {
+        if (wSum > 0.0) {
+            entry.weight /= wSum;
+            entry.cadence_weight /= wSum;
+        }
         out.vocabulary.push_back(entry);
     }
     std::sort(out.vocabulary.begin(), out.vocabulary.end(),
@@ -291,15 +333,40 @@ HarmonyAxis poolHarmonyAxes(const std::vector<std::pair<HarmonyAxis, double>>& i
     if (out.vocabulary.size() > 12) {
         out.vocabulary.resize(12);
     }
+    double vocabW = 0.0, vocabC = 0.0;
+    for (const auto& e : out.vocabulary) {
+        vocabW += std::max(0.0, e.weight);
+        vocabC += std::max(0.0, e.cadence_weight);
+    }
+    if (vocabW > 0.0) {
+        for (auto& e : out.vocabulary) e.weight /= vocabW;
+    }
+    if (vocabC > 0.0) {
+        for (auto& e : out.vocabulary) e.cadence_weight /= vocabC;
+    }
+
+    if (!bestRefProg.empty()) {
+        bool allInVocab = true;
+        for (const auto& rs : bestRefProg) {
+            bool found = false;
+            for (const auto& ve : out.vocabulary) {
+                if (ve.symbol == rs) { found = true; break; }
+            }
+            if (!found) { allInVocab = false; break; }
+        }
+        if (allInVocab) {
+            out.reference_progression = std::move(bestRefProg);
+        }
+    }
 
     for (const auto& fromEntry : out.vocabulary) {
         std::map<std::string, double> row;
         const auto it = transAccum.find(fromEntry.symbol);
         for (const auto& toEntry : out.vocabulary) {
-            double val = 0.08 * toEntry.weight;
+            double val = 0.02 * toEntry.weight;
             if (it != transAccum.end()) {
                 if (auto jt = it->second.find(toEntry.symbol); jt != it->second.end()) {
-                    val += jt->second;
+                    val += (wSum > 0.0 ? (jt->second / wSum) : jt->second);
                 }
             }
             if (toEntry.symbol == fromEntry.symbol && out.vocabulary.size() > 1) {
@@ -318,7 +385,13 @@ RhythmAxis poolRhythmAxes(const std::vector<std::pair<RhythmAxis, double>>& item
     RhythmAxis out;
     out.subdivision = 16;
     std::array<double, 16> cg{}, mg{}, bg{};
+    std::array<double, 16> cp{}, mp{}, bp{};
     double syncSum = 0.0, antSum = 0.0, swingSum = 0.0, paceSum = 0.0, sustSum = 0.0, wSum = 0.0;
+    double cpWSum = 0.0, mpWSum = 0.0, bpWSum = 0.0;
+    auto hasPat = [](const std::array<double, 16>& p) {
+        for (double v : p) if (v > 1e-6) return true;
+        return false;
+    };
     for (const auto& [r, wRaw] : items) {
         const double w = std::max(0.01, wRaw);
         wSum += w;
@@ -326,6 +399,18 @@ RhythmAxis poolRhythmAxes(const std::vector<std::pair<RhythmAxis, double>>& item
             cg[i] += r.chord_onset_grid[i] * w;
             mg[i] += r.melody_onset_grid[i] * w;
             bg[i] += r.bass_onset_grid[i] * w;
+        }
+        if (hasPat(r.chord_pattern)) {
+            cpWSum += w;
+            for (size_t i = 0; i < 16; ++i) cp[i] += r.chord_pattern[i] * w;
+        }
+        if (hasPat(r.melody_pattern)) {
+            mpWSum += w;
+            for (size_t i = 0; i < 16; ++i) mp[i] += r.melody_pattern[i] * w;
+        }
+        if (hasPat(r.bass_pattern)) {
+            bpWSum += w;
+            for (size_t i = 0; i < 16; ++i) bp[i] += r.bass_pattern[i] * w;
         }
         syncSum += r.syncopation * w;
         antSum += r.anticipation * w;
@@ -339,6 +424,25 @@ RhythmAxis poolRhythmAxes(const std::vector<std::pair<RhythmAxis, double>>& item
     out.chord_onset_grid = cg;
     out.melody_onset_grid = mg;
     out.bass_onset_grid = bg;
+
+    auto finalizePat = [](std::array<double, 16>& pat, double patWSum) {
+        if (patWSum <= 0.0) return;
+        double mx = 0.0;
+        for (double v : pat) mx = std::max(mx, v);
+        if (mx > 1e-9) {
+            for (double& v : pat) {
+                v = std::clamp(v / mx, 0.0, 1.0);
+                if (v < 0.28) v = 0.0;
+            }
+        }
+    };
+    finalizePat(cp, cpWSum);
+    finalizePat(mp, mpWSum);
+    finalizePat(bp, bpWSum);
+    out.chord_pattern = cp;
+    out.melody_pattern = mp;
+    out.bass_pattern = bp;
+
     out.syncopation = std::clamp(syncSum / wSum, 0.0, 1.0);
     out.anticipation = std::clamp(antSum / wSum, 0.0, 1.0);
     out.swing = std::clamp(swingSum / wSum, 0.0, 1.0);
@@ -393,6 +497,7 @@ MelodyAxis poolMelodyAxes(const std::vector<std::pair<MelodyAxis, double>>& item
     if (items.empty()) return out;
     std::array<double, 25> hist{};
     double ct = 0.0, tt = 0.0, md = 0.0, mr = 0.0, ac = 0.0, leg = 0.0, mLo = 0.0, mHi = 0.0, wSum = 0.0;
+    double bestMotifW = -1.0;
     for (const auto& [m, wRaw] : items) {
         const double w = std::max(0.01, wRaw);
         wSum += w;
@@ -405,6 +510,10 @@ MelodyAxis poolMelodyAxes(const std::vector<std::pair<MelodyAxis, double>>& item
         leg += m.legato_ratio * w;
         mLo += m.register_low * w;
         mHi += m.register_high * w;
+        if (!m.reference_motif.empty() && w > bestMotifW) {
+            bestMotifW = w;
+            out.reference_motif = m.reference_motif;
+        }
     }
     out.interval_histogram = hist;
     out.chord_tone_ratio = std::clamp(ct / wSum, 0.15, 0.95);
@@ -439,32 +548,54 @@ double MidiStyleAnalyzer::estimateBpm(const std::vector<TimedNoteSec>& notes) {
     }
     if (uniqueOnsets.size() < 3) return 120.0;
 
-    // Score candidate integer BPMs from 70 to 185 using beat-grid alignment
-    double bestBpm = 120.0;
-    double bestScore = -1.0;
+    // Score candidate integer BPMs from 70 to 185 using beat-grid alignment + natural tempo prior
+    int bestBpm = 120;
+    double bestWeighted = -1.0;
+    std::array<double, 186> rawScores{};
     for (int bpm = 70; bpm <= 185; ++bpm) {
         const double spb = 60.0 / static_cast<double>(bpm);
         double score = 0.0;
         for (size_t i = 0; i < uniqueOnsets.size(); ++i) {
             const double beatPhase = std::fmod(uniqueOnsets[i] / spb, 1.0);
-            const double sixteenthErr = std::abs(beatPhase * 4.0 - std::round(beatPhase * 4.0));
-            score += std::exp(-sixteenthErr * sixteenthErr * 18.0);
+            const double eighthErr = std::abs(beatPhase * 2.0 - std::round(beatPhase * 2.0));
+            score += std::exp(-eighthErr * eighthErr * 18.0);
             if (i > 0) {
                 const double ioi = uniqueOnsets[i] - uniqueOnsets[i - 1];
-                const double beats = ioi / spb;
-                if (beats >= 0.2 && beats <= 4.0) {
+                if (ioi >= 0.16 && ioi <= 2.2) {
+                    const double beats = ioi / spb;
                     const double qErr = std::abs(beats * 2.0 - std::round(beats * 2.0));
-                    score += 0.6 * std::exp(-qErr * qErr * 16.0);
+                    score += 0.55 * std::exp(-qErr * qErr * 16.0);
+                    if (beats >= 0.7 && beats <= 2.3) {
+                        const double bErr = std::abs(beats - std::round(beats));
+                        score += 0.35 * std::exp(-bErr * bErr * 14.0);
+                    }
                 }
             }
         }
-        // Mild prior around common musical BPM ranges (90 / 140 / 172)
-        if (score > bestScore) {
-            bestScore = score;
-            bestBpm = static_cast<double>(bpm);
+        rawScores[static_cast<size_t>(bpm)] = score;
+        const double prior = 1.0 + 0.10 * std::exp(-std::pow((static_cast<double>(bpm) - 110.0) / 36.0, 2.0));
+        const double weighted = score * prior;
+        if (weighted > bestWeighted) {
+            bestWeighted = weighted;
+            bestBpm = bpm;
         }
     }
-    return bestBpm;
+
+    if (bestBpm > 148) {
+        const int halfCenter = static_cast<int>(std::llround(static_cast<double>(bestBpm) * 0.5));
+        int bestHalf = -1;
+        double bestHalfRaw = -1.0;
+        for (int b = std::max(70, halfCenter - 1); b <= std::min(185, halfCenter + 1); ++b) {
+            if (rawScores[static_cast<size_t>(b)] > bestHalfRaw) {
+                bestHalfRaw = rawScores[static_cast<size_t>(b)];
+                bestHalf = b;
+            }
+        }
+        if (bestHalf >= 70 && bestHalfRaw >= 0.80 * rawScores[static_cast<size_t>(bestBpm)]) {
+            bestBpm = bestHalf;
+        }
+    }
+    return static_cast<double>(bestBpm);
 }
 
 double MidiStyleAnalyzer::estimateBeatPhaseBeats(const std::vector<NoteEvent>& events, double beatsPerBar) {
@@ -551,8 +682,12 @@ StyleProfile MidiStyleAnalyzer::analyzeTimed(const std::vector<TimedNoteSec>& no
             ev.channel = 10;
         } else if (ev.program >= 32 && ev.program <= 39) {
             ev.channel = 3; // Bass
-        } else if ((ev.program >= 56 && ev.program <= 87) || (ev.program >= 104 && ev.program <= 111)) {
-            ev.channel = 2; // Solo / Lead / Reed / Pipe / Pluck
+        } else if ((ev.program >= 52 && ev.program <= 54) || ev.program == 40 ||
+                   (ev.program >= 56 && ev.program <= 87) || (ev.program >= 104 && ev.program <= 111)) {
+            const bool isVoice = (ev.program >= 52 && ev.program <= 54);
+            if (isVoice && (ev.pitch < 45 || ev.pitch > 92)) continue;
+            if (!isVoice && (ev.pitch < 48 || ev.pitch > 96)) continue;
+            ev.channel = 2; // Voice / Solo / Lead / Reed / Pipe / Pluck
         } else {
             ev.channel = 1;
         }
@@ -621,34 +756,79 @@ StyleProfile MidiStyleAnalyzer::analyze(const std::vector<NoteEvent>& rawEvents,
         melodyNotes.clear();
         bassNotes.clear();
 
-        size_t ch1Count = 0, ch2Count = 0, ch3Count = 0;
-        for (const auto& n : notes) {
-            if (n.channel == 1) ++ch1Count;
-            else if (n.channel == 2) ++ch2Count;
-            else if (n.channel == 3) ++ch3Count;
-        }
-        const bool hasExplicitMelody = (ch2Count >= 4) &&
-                                       (static_cast<double>(ch2Count) >= 0.05 * static_cast<double>(ch1Count + ch2Count));
+        auto isVoiceProg = [](int prog) { return prog >= 52 && prog <= 54; };
+        auto isLeadProg = [](int prog) {
+            return prog == 40 || (prog >= 56 && prog <= 87) || (prog >= 104 && prog <= 111);
+        };
+        auto isValidMelNote = [&](const NoteEvent& n) {
+            if (isVoiceProg(n.program)) return n.pitch >= 45 && n.pitch <= 92;
+            if (n.program > 0 && isLeadProg(n.program)) return n.pitch >= 48 && n.pitch <= 96;
+            return n.pitch >= 48 && n.pitch <= 104;
+        };
 
-        if (hasExplicitMelody) {
-            for (const auto& n : notes) {
-                if (n.channel == 2) melodyNotes.push_back(n);
-                else if (n.channel == 3) bassNotes.push_back(n);
+        std::vector<NoteEvent> voiceNotes;
+        std::vector<NoteEvent> explicitCh2Notes;
+        std::vector<NoteEvent> explicitBassNotes;
+        std::vector<NoteEvent> otherNotes;
+
+        for (const auto& n : notes) {
+            if (n.channel == 3 || (n.program >= 32 && n.program <= 39)) {
+                explicitBassNotes.push_back(n);
+            } else if (isVoiceProg(n.program)) {
+                if (isValidMelNote(n)) {
+                    NoteEvent vn = n;
+                    vn.channel = 2;
+                    voiceNotes.push_back(vn);
+                }
+            } else if (n.channel == 2 || isLeadProg(n.program)) {
+                if (isValidMelNote(n)) {
+                    NoteEvent mn = n;
+                    mn.channel = 2;
+                    explicitCh2Notes.push_back(mn);
+                }
+            } else {
+                otherNotes.push_back(n);
+            }
+        }
+
+        bassNotes = explicitBassNotes;
+        const bool hasExplicitBass = !explicitBassNotes.empty();
+        const size_t minExplicitCount = (notes.size() < 24) ? 2 : 4;
+
+        if (voiceNotes.size() >= minExplicitCount) {
+            melodyNotes = voiceNotes;
+            for (const auto& en : explicitCh2Notes) {
+                if (en.program == 80) melodyNotes.push_back(en);
+                else otherNotes.push_back(en);
+            }
+            std::sort(melodyNotes.begin(), melodyNotes.end(), [](const NoteEvent& a, const NoteEvent& b) {
+                if (a.onset_beats != b.onset_beats) return a.onset_beats < b.onset_beats;
+                return a.pitch < b.pitch;
+            });
+            for (const auto& n : otherNotes) {
+                if (!hasExplicitBass && n.pitch < 48) bassNotes.push_back(n);
+                else chordNotes.push_back(n);
+            }
+        } else if (explicitCh2Notes.size() >= minExplicitCount) {
+            melodyNotes = explicitCh2Notes;
+            for (const auto& vn : voiceNotes) melodyNotes.push_back(vn);
+            std::sort(melodyNotes.begin(), melodyNotes.end(), [](const NoteEvent& a, const NoteEvent& b) {
+                if (a.onset_beats != b.onset_beats) return a.onset_beats < b.onset_beats;
+                return a.pitch < b.pitch;
+            });
+            for (const auto& n : otherNotes) {
+                if (!hasExplicitBass && n.pitch < 48) bassNotes.push_back(n);
                 else chordNotes.push_back(n);
             }
         } else {
-            // Separate any explicit channel-3 or bass-program notes first, then skyline-separate the rest
-            std::vector<NoteEvent> remaining;
-            remaining.reserve(notes.size());
-            for (const auto& n : notes) {
-                if (n.channel == 3 || (n.program >= 32 && n.program <= 39)) {
-                    bassNotes.push_back(n);
-                } else if (n.channel == 2) {
-                    melodyNotes.push_back(n);
-                } else {
-                    remaining.push_back(n);
-                }
-            }
+            // No explicit vocal/melody channel: keep harmony intact and extract a clean monophonic skyline
+            std::vector<NoteEvent> remaining = otherNotes;
+            remaining.insert(remaining.end(), explicitCh2Notes.begin(), explicitCh2Notes.end());
+            remaining.insert(remaining.end(), voiceNotes.begin(), voiceNotes.end());
+            std::sort(remaining.begin(), remaining.end(), [](const NoteEvent& a, const NoteEvent& b) {
+                if (a.onset_beats != b.onset_beats) return a.onset_beats < b.onset_beats;
+                return a.pitch < b.pitch;
+            });
 
             size_t i = 0;
             while (i < remaining.size()) {
@@ -659,48 +839,47 @@ StyleProfile MidiStyleAnalyzer::analyze(const std::vector<NoteEvent>& rawEvents,
                 const size_t clusterCount = j - i;
                 if (clusterCount >= 3) {
                     size_t startIdx = i;
-                    if (ch3Count == 0 && remaining[i].pitch < 48 && (remaining[i + 1].pitch - remaining[i].pitch) >= 5) {
+                    if (!hasExplicitBass && remaining[i].pitch < 48 && (remaining[i + 1].pitch - remaining[i].pitch) >= 5) {
                         bassNotes.push_back(remaining[i]);
                         startIdx = i + 1;
                     }
                     for (size_t k = startIdx; k < j; ++k) {
                         chordNotes.push_back(remaining[k]);
                     }
-                    const auto& top = remaining[j - 1];
-                    const int gapBelow = top.pitch - remaining[j - 2].pitch;
-                    if (top.pitch >= 60 && (gapBelow >= 5 || top.pitch >= 68)) {
-                        melodyNotes.push_back(top);
-                    }
                 } else if (clusterCount == 2) {
-                    const auto& lo = remaining[i];
-                    const auto& hi = remaining[i + 1];
-                    if (ch3Count == 0 && lo.pitch < 50) {
-                        bassNotes.push_back(lo);
-                        if (hi.pitch >= 60) melodyNotes.push_back(hi);
-                        else chordNotes.push_back(hi);
+                    if (!hasExplicitBass && remaining[i].pitch < 50) {
+                        bassNotes.push_back(remaining[i]);
+                        chordNotes.push_back(remaining[i + 1]);
                     } else {
-                        chordNotes.push_back(lo);
-                        if (hi.pitch >= 60) {
-                            melodyNotes.push_back(hi);
-                            if (hi.pitch - lo.pitch <= 12) chordNotes.push_back(hi);
-                        } else {
-                            chordNotes.push_back(hi);
-                        }
+                        chordNotes.push_back(remaining[i]);
+                        chordNotes.push_back(remaining[i + 1]);
                     }
                 } else {
-                    const auto& single = remaining[i];
-                    if (ch3Count == 0 && single.pitch < 48) {
-                        bassNotes.push_back(single);
-                    } else if (single.pitch >= 60 || single.duration_beats <= 1.25) {
-                        melodyNotes.push_back(single);
-                        if (single.duration_beats >= 0.5 && single.pitch < 76) {
-                            chordNotes.push_back(single);
-                        }
+                    if (!hasExplicitBass && remaining[i].pitch < 48) {
+                        bassNotes.push_back(remaining[i]);
                     } else {
-                        chordNotes.push_back(single);
+                        chordNotes.push_back(remaining[i]);
                     }
                 }
                 i = j;
+            }
+
+            std::map<int, NoteEvent> bucketTop;
+            for (const auto& n : remaining) {
+                if (n.pitch < 58) continue;
+                const int bucket = static_cast<int>(std::floor(n.onset_beats * 4.0 + 1e-6));
+                auto it = bucketTop.find(bucket);
+                if (it == bucketTop.end() || n.pitch > it->second.pitch) {
+                    bucketTop[bucket] = n;
+                }
+            }
+            for (const auto& [b, ev] : bucketTop) {
+                if (!melodyNotes.empty() &&
+                    melodyNotes.back().pitch == ev.pitch &&
+                    (ev.onset_beats - melodyNotes.back().onset_beats) < 0.35) {
+                    continue;
+                }
+                melodyNotes.push_back(ev);
             }
         }
 
@@ -791,7 +970,8 @@ StyleProfile MidiStyleAnalyzer::analyze(const std::vector<NoteEvent>& rawEvents,
             for (const auto& n : cNotes) {
                 const double overlap = std::min(n.onset_beats + n.duration_beats, wEnd) - std::max(n.onset_beats, wStart);
                 if (overlap > 0.0) {
-                    chroma[static_cast<size_t>(normalizePitchClass(n.pitch))] += overlap;
+                    const double durMult = (n.duration_beats >= 0.45) ? 1.35 : 0.60;
+                    chroma[static_cast<size_t>(normalizePitchClass(n.pitch))] += overlap * durMult;
                 }
             }
             for (const auto& n : bNotes) {
@@ -802,12 +982,12 @@ StyleProfile MidiStyleAnalyzer::analyze(const std::vector<NoteEvent>& rawEvents,
                 }
             }
             if (bassPc >= 0) {
-                chroma[static_cast<size_t>(bassPc)] += 0.65 * windowBeats;
+                chroma[static_cast<size_t>(bassPc)] += 0.95 * windowBeats;
             }
             const double mass = std::accumulate(chroma.begin(), chroma.end(), 0.0);
             if (mass <= 1e-6) continue;
 
-            const RomanChord rc = matchChordToRoman(chroma, bassPc, tonicPc);
+            const RomanChord rc = matchChordToRoman(chroma, bassPc, tonicPc, mode);
             const std::string sym = formatRomanChord(rc);
             const int barIdx = static_cast<int>(wStart / beatsPerBar);
             const bool phraseEnd = ((barIdx + 1) % 4 == 0) && (wEnd >= (barIdx + 1) * beatsPerBar - 0.1);
@@ -883,9 +1063,149 @@ StyleProfile MidiStyleAnalyzer::analyze(const std::vector<NoteEvent>& rawEvents,
             std::sort(outHarmony.vocabulary.begin(), outHarmony.vocabulary.end(),
                       [](const ChordVocabEntry& a, const ChordVocabEntry& b) { return a.weight > b.weight; });
 
-            // Task 3D: Top-K (K=12) vocabulary pruning
-            if (outHarmony.vocabulary.size() > 12) {
-                outHarmony.vocabulary.resize(12);
+            if (outHarmony.vocabulary.size() > 8) {
+                outHarmony.vocabulary.resize(8);
+            }
+
+            auto normalizeHarmVocab = [&]() {
+                double wSum = 0.0, cSum = 0.0;
+                for (const auto& e : outHarmony.vocabulary) {
+                    wSum += std::max(0.0, e.weight);
+                    cSum += std::max(0.0, e.cadence_weight);
+                }
+                if (wSum > 0.0) {
+                    for (auto& e : outHarmony.vocabulary) e.weight /= wSum;
+                }
+                if (cSum > 0.0) {
+                    for (auto& e : outHarmony.vocabulary) e.cadence_weight /= cSum;
+                }
+            };
+            normalizeHarmVocab();
+
+            // Extract representative 4-bar / 8-bar reference_progression
+            const double rawPacing = static_cast<double>(segments.size()) / static_cast<double>(subBars);
+            const int slotsPerBar = (rawPacing >= 1.65) ? 2 : 1;
+            const double slotDur = beatsPerBar / static_cast<double>(slotsPerBar);
+            const int numProgSlots = subBars * slotsPerBar;
+            std::vector<std::string> slotSyms;
+            slotSyms.reserve(static_cast<size_t>(numProgSlots));
+            for (int k = 0; k < numProgSlots; ++k) {
+                const double s0 = static_cast<double>(k) * slotDur;
+                const double s1 = s0 + slotDur;
+                std::string bestSym = segments.front().symbol;
+                double bestOv = -1.0;
+                for (const auto& seg : segments) {
+                    const double ov = std::min(seg.endBeat, s1) - std::max(seg.startBeat, s0);
+                    if (ov > bestOv) {
+                        bestOv = ov;
+                        bestSym = seg.symbol;
+                    }
+                }
+                slotSyms.push_back(std::move(bestSym));
+            }
+
+            if (!slotSyms.empty()) {
+                auto vocabWeightOf = [&](const std::string& sym) -> double {
+                    for (const auto& e : outHarmony.vocabulary) {
+                        if (e.symbol == sym) return e.weight;
+                    }
+                    return 0.0;
+                };
+                auto scoreWindow = [&](size_t start, size_t len) -> std::pair<double, int> {
+                    std::set<std::string> uniq;
+                    double wAccum = 0.0;
+                    bool hasTonic = false;
+                    int changes = 0;
+                    for (size_t k = 0; k < len; ++k) {
+                        const auto& sym = slotSyms[start + k];
+                        uniq.insert(sym);
+                        wAccum += vocabWeightOf(sym);
+                        if (k > 0 && sym != slotSyms[start + k - 1]) {
+                            ++changes;
+                        }
+                        if (auto it = vocabMap.find(sym); it != vocabMap.end() &&
+                            it->second.chord.degree == 1 && it->second.chord.accidental == 0) {
+                            hasTonic = true;
+                        }
+                    }
+                    int repeatHits = 0;
+                    for (size_t other = 0; other + len <= slotSyms.size(); other += static_cast<size_t>(slotsPerBar)) {
+                        if (other + len > start && other < start + len) continue;
+                        int matches = 0;
+                        for (size_t k = 0; k < len; ++k) {
+                            if (slotSyms[start + k] == slotSyms[other + k]) ++matches;
+                        }
+                        if (static_cast<double>(matches) >= 0.75 * static_cast<double>(len)) {
+                            ++repeatHits;
+                        }
+                    }
+                    double scVal = 1.6 * static_cast<double>(std::min<size_t>(uniq.size(), 4));
+                    scVal += 1.1 * static_cast<double>(std::min(changes, 3));
+                    if (uniq.size() == 1 && vocabMap.size() > 1) scVal -= 12.0;
+                    if (hasTonic) scVal += 1.0;
+                    if (auto it = vocabMap.find(slotSyms[start]); it != vocabMap.end() &&
+                        it->second.chord.degree == 1 && it->second.chord.accidental == 0) {
+                        scVal += 0.8;
+                    }
+                    scVal += 1.2 * static_cast<double>(std::min(repeatHits, 4));
+                    scVal += 0.35 * wAccum;
+                    return {scVal, repeatHits};
+                };
+
+                const size_t winLen4 = std::min<size_t>(static_cast<size_t>(4 * slotsPerBar), slotSyms.size());
+                size_t bestStart = 0;
+                size_t bestLen = winLen4;
+                double bestScore = -1e9;
+                size_t bestDistinct = 0;
+
+                for (size_t s = 0; s + winLen4 <= slotSyms.size(); s += static_cast<size_t>(slotsPerBar)) {
+                    const auto [scVal, _rep] = scoreWindow(s, winLen4);
+                    if (scVal > bestScore) {
+                        bestScore = scVal;
+                        bestStart = s;
+                        std::set<std::string> u(slotSyms.begin() + static_cast<ptrdiff_t>(s),
+                                                slotSyms.begin() + static_cast<ptrdiff_t>(s + winLen4));
+                        bestDistinct = u.size();
+                    }
+                }
+                if (slotsPerBar == 1 && slotSyms.size() >= 16) {
+                    for (size_t s = 0; s + 8 <= slotSyms.size(); s += 4) {
+                        const auto [scVal, rep] = scoreWindow(s, 8);
+                        std::set<std::string> u(slotSyms.begin() + static_cast<ptrdiff_t>(s),
+                                                slotSyms.begin() + static_cast<ptrdiff_t>(s + 8));
+                        if (rep >= 1 && u.size() > bestDistinct && scVal >= bestScore - 0.5) {
+                            bestStart = s;
+                            bestLen = 8;
+                            bestScore = scVal;
+                            bestDistinct = u.size();
+                        }
+                    }
+                }
+
+                outHarmony.reference_progression.assign(
+                    slotSyms.begin() + static_cast<ptrdiff_t>(bestStart),
+                    slotSyms.begin() + static_cast<ptrdiff_t>(bestStart + bestLen));
+                while (outHarmony.reference_progression.size() < 4 && !slotSyms.empty()) {
+                    outHarmony.reference_progression.push_back(
+                        outHarmony.reference_progression[outHarmony.reference_progression.size() % bestLen]);
+                }
+
+                // Guarantee every reference_progression chord exists in outHarmony.vocabulary
+                bool addedRefChord = false;
+                for (const auto& rs : outHarmony.reference_progression) {
+                    const bool exists = std::any_of(
+                        outHarmony.vocabulary.begin(), outHarmony.vocabulary.end(),
+                        [&](const ChordVocabEntry& e) { return e.symbol == rs; });
+                    if (!exists) {
+                        if (auto it = vocabMap.find(rs); it != vocabMap.end()) {
+                            outHarmony.vocabulary.push_back(it->second);
+                            addedRefChord = true;
+                        }
+                    }
+                }
+                if (addedRefChord) {
+                    normalizeHarmVocab();
+                }
             }
 
             outHarmony.transitions.clear();
@@ -893,7 +1213,7 @@ StyleProfile MidiStyleAnalyzer::analyze(const std::vector<NoteEvent>& rawEvents,
                 std::map<std::string, double> row;
                 const auto it = counts.find(fromEntry.symbol);
                 for (const auto& toEntry : outHarmony.vocabulary) {
-                    double c = 0.14 * toEntry.weight; // healthy Dirichlet smoothing
+                    double c = 0.15 * toEntry.weight; // light normalized prior preserves real transitions
                     if (it != counts.end()) {
                         const auto jt = it->second.find(toEntry.symbol);
                         if (jt != it->second.end()) {
@@ -927,6 +1247,76 @@ StyleProfile MidiStyleAnalyzer::analyze(const std::vector<NoteEvent>& rawEvents,
                 }
             };
 
+            auto extractCrispBarPattern = [&](const std::vector<NoteEvent>& evs, bool dedupClusters, int maxHits) {
+                std::array<double, 16> pat{};
+                if (evs.empty()) return pat;
+
+                std::map<int, uint16_t> barMasks;
+                std::array<double, 16> stepCounts{};
+                double lastOnset = -10.0;
+                for (const auto& n : evs) {
+                    if (dedupClusters && (n.onset_beats - lastOnset) <= 0.12) continue;
+                    lastOnset = n.onset_beats;
+                    const double pos = std::max(0.0, n.onset_beats);
+                    const int barIdx = static_cast<int>(std::floor(pos / beatsPerBar));
+                    const double barPos = std::fmod(pos, beatsPerBar);
+                    const int step = static_cast<int>(std::llround((barPos / beatsPerBar) * 16.0)) % 16;
+                    barMasks[barIdx] |= static_cast<uint16_t>(1u << step);
+                }
+                if (barMasks.empty()) return pat;
+
+                std::map<uint16_t, int> maskFreq;
+                for (const auto& [b, mask] : barMasks) {
+                    if (mask == 0) continue;
+                    maskFreq[mask] += 1;
+                    for (int s = 0; s < 16; ++s) {
+                        if ((mask & (1u << s)) != 0) stepCounts[static_cast<size_t>(s)] += 1.0;
+                    }
+                }
+                if (maskFreq.empty()) return pat;
+
+                uint16_t modeMask = 0;
+                int bestFreq = -1;
+                for (const auto& [mask, cnt] : maskFreq) {
+                    const int scScore = cnt * 10 + ((mask & 1u) ? 1 : 0);
+                    if (scScore > bestFreq) {
+                        bestFreq = scScore;
+                        modeMask = mask;
+                    }
+                }
+
+                const double activeBars = static_cast<double>(barMasks.size());
+                double mx = 0.0;
+                for (int s = 0; s < 16; ++s) {
+                    const double freq = stepCounts[static_cast<size_t>(s)] / activeBars;
+                    const double modeBit = ((modeMask & (1u << s)) != 0) ? 1.0 : 0.0;
+                    pat[static_cast<size_t>(s)] = 0.60 * modeBit + 0.40 * freq;
+                    mx = std::max(mx, pat[static_cast<size_t>(s)]);
+                }
+                if (mx > 1e-6) {
+                    for (double& v : pat) v /= mx;
+                }
+                if (stepCounts[0] > 0.0 && pat[0] < 0.85) {
+                    pat[0] = 0.85;
+                }
+                for (double& v : pat) {
+                    if (v < 0.30) v = 0.0;
+                }
+                std::vector<std::pair<double, int>> ranked;
+                for (int s = 0; s < 16; ++s) {
+                    if (pat[static_cast<size_t>(s)] > 0.0) ranked.emplace_back(pat[static_cast<size_t>(s)], s);
+                }
+                if (static_cast<int>(ranked.size()) > maxHits) {
+                    std::sort(ranked.begin(), ranked.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+                    std::array<bool, 16> keep{};
+                    for (int k = 0; k < maxHits; ++k) keep[static_cast<size_t>(ranked[static_cast<size_t>(k)].second)] = true;
+                    for (int s = 0; s < 16; ++s) {
+                        if (!keep[static_cast<size_t>(s)]) pat[static_cast<size_t>(s)] = 0.0;
+                    }
+                }
+                return pat;
+            };
+
             accumulateGrid(cNotes, chordGrid, true);
             accumulateGrid(mNotes, melodyGrid, false);
             accumulateGrid(bNotes, bassGrid, false);
@@ -938,6 +1328,9 @@ StyleProfile MidiStyleAnalyzer::analyze(const std::vector<NoteEvent>& rawEvents,
             outRhythm.chord_onset_grid = chordGrid;
             outRhythm.melody_onset_grid = melodyGrid;
             outRhythm.bass_onset_grid = bassGrid;
+            outRhythm.chord_pattern = extractCrispBarPattern(cNotes, true, 6);
+            outRhythm.bass_pattern = extractCrispBarPattern(bNotes, false, 6);
+            outRhythm.melody_pattern = extractCrispBarPattern(mNotes, false, 8);
 
             double totalWeight = 0.0, offBeatWeight = 0.0, anticWeight = 0.0;
             for (int s = 0; s < 16; ++s) {
@@ -966,11 +1359,30 @@ StyleProfile MidiStyleAnalyzer::analyze(const std::vector<NoteEvent>& rawEvents,
 
             if (!cNotes.empty()) {
                 std::vector<double> durs;
-                for (const auto& n : cNotes) durs.push_back(n.duration_beats);
+                std::vector<double> clusterOnsets;
+                double lastOn = -10.0;
+                for (const auto& n : cNotes) {
+                    durs.push_back(n.duration_beats);
+                    if ((n.onset_beats - lastOn) > 0.12) {
+                        clusterOnsets.push_back(n.onset_beats);
+                        lastOn = n.onset_beats;
+                    }
+                }
                 std::sort(durs.begin(), durs.end());
                 const double medDur = percentileSorted(durs, 0.5);
-                const double expectedBarSlice = beatsPerBar / std::max(0.5, outRhythm.harmonic_pacing);
-                outRhythm.sustain_ratio = std::clamp(medDur / expectedBarSlice, 0.2, 1.15);
+                double medIoi = beatsPerBar / std::max(0.5, outRhythm.harmonic_pacing);
+                if (clusterOnsets.size() >= 2) {
+                    std::vector<double> iois;
+                    for (size_t k = 1; k < clusterOnsets.size(); ++k) {
+                        const double dt = clusterOnsets[k] - clusterOnsets[k - 1];
+                        if (dt >= 0.12 && dt <= beatsPerBar * 2.0) iois.push_back(dt);
+                    }
+                    if (!iois.empty()) {
+                        std::sort(iois.begin(), iois.end());
+                        medIoi = std::clamp(percentileSorted(iois, 0.5), 0.5, beatsPerBar);
+                    }
+                }
+                outRhythm.sustain_ratio = std::clamp(medDur / std::max(0.25, medIoi), 0.45, 0.96);
             }
         }
 
@@ -1117,10 +1529,145 @@ StyleProfile MidiStyleAnalyzer::analyze(const std::vector<NoteEvent>& rawEvents,
                 outMelody.motif_repetition = std::clamp(
                     static_cast<double>(repeated) / static_cast<double>(intervals.size()), 0.1, 0.95);
             }
-            if (!intervals.empty()) {
-                const double meanStep = std::accumulate(intervals.begin(), intervals.end(), 0.0) / static_cast<double>(intervals.size());
-                outMelody.arch_contour = std::clamp(0.5 + meanStep / 10.0, 0.1, 0.9);
+
+            // Phrase arch contour: middle of 2-bar phrases vs edges
+            if (mNotes.size() >= 4) {
+                double archAccum = 0.0;
+                int archPhrases = 0;
+                const double winBeats = 2.0 * beatsPerBar;
+                for (int b = 0; b < subBars; b += 2) {
+                    const double w0 = static_cast<double>(b) * beatsPerBar;
+                    const double w1 = w0 + winBeats;
+                    double midS = 0.0, edgeS = 0.0;
+                    int midC = 0, edgeC = 0;
+                    for (const auto& mn : mNotes) {
+                        if (mn.onset_beats < w0 - 1e-4 || mn.onset_beats >= w1 - 1e-4) continue;
+                        const double rel = (mn.onset_beats - w0) / winBeats;
+                        if (rel >= 0.25 && rel <= 0.75) { midS += mn.pitch; ++midC; }
+                        else { edgeS += mn.pitch; ++edgeC; }
+                    }
+                    if (midC > 0 && edgeC > 0) {
+                        archAccum += (midS / midC) - (edgeS / edgeC);
+                        ++archPhrases;
+                    }
+                }
+                if (archPhrases > 0) {
+                    outMelody.arch_contour = std::clamp(0.5 + (archAccum / archPhrases) / 12.0, 0.1, 0.9);
+                }
             }
+
+            // Extract representative 2-bar melodic contour motif (reference_motif)
+            {
+                std::vector<int> scaleMidi;
+                for (int oct = 0; oct <= 10; ++oct) {
+                    for (int iv : sc) {
+                        const int mp = oct * 12 + normalizePitchClass(tonicPc + iv);
+                        if (mp >= 0 && mp <= 127) scaleMidi.push_back(mp);
+                    }
+                }
+                std::sort(scaleMidi.begin(), scaleMidi.end());
+                auto pitchToScaleDeg = [&](int p) -> int {
+                    int bestIdx = 0;
+                    int bestDist = 999;
+                    for (size_t idx = 0; idx < scaleMidi.size(); ++idx) {
+                        const int d = std::abs(scaleMidi[idx] - p);
+                        if (d < bestDist) {
+                            bestDist = d;
+                            bestIdx = static_cast<int>(idx);
+                        }
+                    }
+                    return bestIdx;
+                };
+
+                struct QuantMelNote {
+                    int step16 = 0;
+                    int pitch = 60;
+                    double durSteps = 2.0;
+                    bool isCt = true;
+                };
+
+                const double winBeats = 2.0 * beatsPerBar;
+                const int maxStartBar = std::max(0, subBars - 2);
+                std::vector<QuantMelNote> bestWin;
+                double bestWinScore = -1e9;
+
+                for (int b = 0; b <= maxStartBar; ++b) {
+                    const double w0 = static_cast<double>(b) * beatsPerBar;
+                    const double w1 = w0 + winBeats;
+                    std::map<int, QuantMelNote> byStep;
+                    for (const auto& mn : mNotes) {
+                        if (mn.onset_beats < w0 - 1e-4 || mn.onset_beats >= w1 - 1e-4) continue;
+                        const int step32 = std::clamp(
+                            static_cast<int>(std::llround(((mn.onset_beats - w0) / winBeats) * 32.0)),
+                            0, 31);
+                        bool isCt = true;
+                        const int pc = normalizePitchClass(mn.pitch);
+                        for (const auto& seg : segments) {
+                            if (mn.onset_beats >= seg.startBeat - 0.1 && mn.onset_beats <= seg.endBeat + 0.1) {
+                                const auto cpcs = chordPitchClasses(seg.chord, tonicPc, mode);
+                                isCt = std::find(cpcs.begin(), cpcs.end(), pc) != cpcs.end();
+                                break;
+                            }
+                        }
+                        const double dSteps = std::clamp(mn.duration_beats * (16.0 / beatsPerBar), 1.0, 8.0);
+                        auto it = byStep.find(step32);
+                        if (it == byStep.end() || mn.pitch > it->second.pitch) {
+                            byStep[step32] = QuantMelNote{step32, mn.pitch, dSteps, isCt};
+                        }
+                    }
+                    if (byStep.size() < 3) continue;
+
+                    std::vector<QuantMelNote> cand;
+                    std::set<int> uniqP;
+                    int minP = 128, maxP = -1, unisons = 0, inSc = 0, cts = 0;
+                    int prevP = -1;
+                    for (const auto& [st, qn] : byStep) {
+                        cand.push_back(qn);
+                        uniqP.insert(qn.pitch);
+                        minP = std::min(minP, qn.pitch);
+                        maxP = std::max(maxP, qn.pitch);
+                        if (prevP == qn.pitch) ++unisons;
+                        prevP = qn.pitch;
+                        if (inScale[static_cast<size_t>(normalizePitchClass(qn.pitch))]) ++inSc;
+                        if (qn.isCt) ++cts;
+                    }
+                    const double nCand = static_cast<double>(cand.size());
+                    const double span = static_cast<double>(maxP - minP);
+                    const double unisonRatio = static_cast<double>(unisons) / std::max(1.0, nCand - 1.0);
+                    double scVal = 0.8 * static_cast<double>(std::min<size_t>(uniqP.size(), 6));
+                    if (cand.size() >= 4 && cand.size() <= 14) scVal += 2.0;
+                    if (span >= 3.0 && span <= 16.0) scVal += 2.0;
+                    scVal += 2.5 * (static_cast<double>(inSc) / nCand);
+                    scVal += 1.5 * (static_cast<double>(cts) / nCand);
+                    scVal -= 2.2 * unisonRatio;
+
+                    if (scVal > bestWinScore) {
+                        bestWinScore = scVal;
+                        bestWin = std::move(cand);
+                    }
+                }
+
+                if (bestWin.size() >= 3) {
+                    if (bestWin.size() > 16) bestWin.resize(16);
+                    std::vector<int> degs;
+                    degs.reserve(bestWin.size());
+                    for (const auto& qn : bestWin) degs.push_back(pitchToScaleDeg(qn.pitch));
+                    std::vector<int> sortedDegs = degs;
+                    std::sort(sortedDegs.begin(), sortedDegs.end());
+                    const int anchorDeg = sortedDegs[sortedDegs.size() / 2];
+
+                    outMelody.reference_motif.clear();
+                    for (size_t k = 0; k < bestWin.size(); ++k) {
+                        MelodyMotifStep ms;
+                        ms.step16 = bestWin[k].step16;
+                        ms.scale_degree_offset = std::clamp(degs[k] - anchorDeg, -10, 10);
+                        ms.duration_steps = bestWin[k].durSteps;
+                        ms.is_chord_tone = bestWin[k].isCt;
+                        outMelody.reference_motif.push_back(ms);
+                    }
+                }
+            }
+
             std::sort(mpitches.begin(), mpitches.end());
             outMelody.register_low = std::clamp(static_cast<int>(percentileSorted(mpitches, 0.05)), 48, 84);
             outMelody.register_high = std::clamp(static_cast<int>(percentileSorted(mpitches, 0.95)),

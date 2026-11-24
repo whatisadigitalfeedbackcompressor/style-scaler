@@ -44,6 +44,7 @@ def build_catalog(styles_dir: Path, out_catalog: Path, catalog_name: str) -> Dic
 
     entries: List[Dict[str, Any]] = []
     genres_map: Dict[str, List[str]] = {}
+    artists_map: Dict[str, List[str]] = {}
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     for json_path in sorted(styles_dir.glob("*.json")):
@@ -82,18 +83,24 @@ def build_catalog(styles_dir: Path, out_catalog: Path, catalog_name: str) -> Dic
         if data.get("genre_source"):
             entry["genre_source"] = str(data["genre_source"])
         if data.get("artist"):
-            entry["artist"] = str(data["artist"])
+            artist_name = str(data["artist"])
+            entry["artist"] = artist_name
+            artists_map.setdefault(artist_name, []).append(preset_id)
+        if data.get("album"):
+            entry["album"] = str(data["album"])
         entries.append(entry)
 
         genres_map.setdefault(genre_name, []).append(preset_id)
 
     sorted_genres = {g: sorted(ids) for g, ids in sorted(genres_map.items(), key=lambda kv: kv[0].lower())}
+    sorted_artists = {a: sorted(ids) for a, ids in sorted(artists_map.items(), key=lambda kv: kv[0].lower())}
 
     catalog = {
         "schema_version": 1,
         "catalog_name": catalog_name,
         "updated_at": stamp,
         "genres": sorted_genres,
+        "artists": sorted_artists,
         "presets": entries,
     }
     out_catalog.parent.mkdir(parents=True, exist_ok=True)

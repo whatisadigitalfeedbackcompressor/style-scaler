@@ -5,6 +5,7 @@
 #include <array>
 #include <cmath>
 #include <thread>
+#include <tuple>
 
 namespace style_scaler {
 
@@ -30,7 +31,11 @@ std::vector<NoteEvent> timedNotesToEvents(const std::vector<TimedNoteSec>& notes
             ev.channel = 10;
         } else if (ev.program >= 32 && ev.program <= 39) {
             ev.channel = 3;
-        } else if ((ev.program >= 56 && ev.program <= 87) || (ev.program >= 104 && ev.program <= 111)) {
+        } else if ((ev.program >= 52 && ev.program <= 54) || ev.program == 40 ||
+                   (ev.program >= 56 && ev.program <= 87) || (ev.program >= 104 && ev.program <= 111)) {
+            const bool isVoice = (ev.program >= 52 && ev.program <= 54);
+            if (isVoice && (ev.pitch < 45 || ev.pitch > 92)) continue;
+            if (!isVoice && (ev.pitch < 48 || ev.pitch > 96)) continue;
             ev.channel = 2;
         } else {
             ev.channel = 1;
@@ -254,7 +259,7 @@ TranscriptionService::DeconstructedSong TranscriptionService::deconstructAudio16
             auto mslNotes = cached_transcriber_->transcribe(
                 mono16k, topts, [&](const msl::TranscriptionUpdate& upd) {
                     const bool keepGoing = !shouldCancel();
-                    if (onProgress && !onProgress(0.30f + 0.60f * upd.progress, "Transcribing with MuScriptor...")) {
+                    if (onProgress && !onProgress(0.30f + 0.45f * upd.progress, "Transcribing with MuScriptor...")) {
                         return false;
                     }
                     return keepGoing;
@@ -272,6 +277,116 @@ TranscriptionService::DeconstructedSong TranscriptionService::deconstructAudio16
                     tn.is_drum = n.is_drum;
                     timedNotes.push_back(tn);
                 }
+
+                auto countPitchedAndVoice = [&]() {
+                    size_t pitchedCnt = 0;
+                    size_t harmonyCnt = 0;
+                    size_t voiceCnt = 0;
+                    for (const auto& tn : timedNotes) {
+                        if (tn.is_drum || tn.program == 128) continue;
+                        ++pitchedCnt;
+                        const bool isBass = (tn.program >= 32 && tn.program <= 39);
+                        const bool isVoice = (tn.program >= 52 && tn.program <= 54);
+                        if (!isBass && !isVoice) {
+                            ++harmonyCnt;
+                        }
+                        if ((tn.program == 52 || tn.program == 80) && tn.pitch >= 45 && tn.pitch <= 92) {
+                            ++voiceCnt;
+                        }
+                    }
+                    return std::tuple<size_t, size_t, size_t>{pitchedCnt, harmonyCnt, voiceCnt};
+                };
+
+                auto appendConditioned = [&](const std::vector<msl::Note>& extra, int forcedProgram = -1) {
+                    for (const auto& n : extra) {
+                        if (n.is_drum) continue;
+                        const int prog = (forcedProgram >= 0) ? forcedProgram : n.program;
+                        if (prog == 52 && (n.pitch < 45 || n.pitch > 92)) continue;
+                        bool dup = false;
+                        for (const auto& ex : timedNotes) {
+                            if (!ex.is_drum && ex.pitch == n.pitch && std::abs(ex.onset_sec - n.onset) < 0.04) {
+                                dup = true;
+                                break;
+                            }
+                        }
+                        if (!dup) {
+                            TimedNoteSec tn;
+                            tn.onset_sec = n.onset;
+                            tn.offset_sec = std::max(n.onset + 0.02, n.offset);
+                            tn.pitch = n.pitch;
+                            tn.velocity = 96;
+                            tn.program = prog;
+                            tn.is_drum = false;
+                            timedNotes.push_back(tn);
+                        }
+                    }
+                };
+
+                auto [pitchedCount, harmonyCount, voiceCount] = countPitchedAndVoice();
+                const bool longEnough = mono16k.size() >= static_cast<size_t>(16000 * 5);
+
+                // Recovery pass A: dense beat tracks where unconditional pass emitted almost no pitched or harmony notes
+                if ((pitchedCount < 16 || harmonyCount < 12) && longEnough && !shouldCancel()) {
+                    if (onProgress && !onProgress(0.76f, "Recovering harmony/bass (MuScriptor)...")) {
+                        out.error = "Cancelled";
+                        return out;
+                    }
+                    msl::TranscribeOptions harmOpts = topts;
+                    harmOpts.instruments = {
+                        msl::InstrumentGroup::AcousticPiano,
+                        msl::InstrumentGroup::ElectricPiano,
+                        msl::InstrumentGroup::CleanElectricGuitar,
+                        msl::InstrumentGroup::AcousticGuitar,
+                        msl::InstrumentGroup::ElectricBass,
+                        msl::InstrumentGroup::Voice,
+                        msl::InstrumentGroup::SynthPad
+                    };
+                    auto harmNotes = cached_transcriber_->transcribe(
+                        mono16k, harmOpts, [&](const msl::TranscriptionUpdate& upd) {
+                            const bool keepGoing = !shouldCancel();
+                            if (onProgress && !onProgress(0.76f + 0.08f * upd.progress, "Recovering harmony/bass...")) {
+                                return false;
+                            }
+                            return keepGoing;
+                        });
+                    if (harmNotes) {
+                        appendConditioned(*harmNotes);
+                    } else if (harmNotes.error() == msl::Error::Cancelled) {
+                        out.error = "Cancelled";
+                        return out;
+                    }
+                    std::tie(pitchedCount, harmonyCount, voiceCount) = countPitchedAndVoice();
+                }
+
+                // Recovery pass B: dedicated vocal melody pass when vocals were drowned out
+                if (voiceCount < 12 && longEnough && !shouldCancel()) {
+                    if (onProgress && !onProgress(0.84f, "Extracting vocal melody (MuScriptor Voice)...")) {
+                        out.error = "Cancelled";
+                        return out;
+                    }
+                    msl::TranscribeOptions voiceOpts = topts;
+                    voiceOpts.instruments = {msl::InstrumentGroup::Voice};
+                    auto voiceNotes = cached_transcriber_->transcribe(
+                        mono16k, voiceOpts, [&](const msl::TranscriptionUpdate& upd) {
+                            const bool keepGoing = !shouldCancel();
+                            if (onProgress && !onProgress(0.84f + 0.06f * upd.progress, "Extracting vocal melody (MuScriptor Voice)...")) {
+                                return false;
+                            }
+                            return keepGoing;
+                        });
+                    if (voiceNotes) {
+                        appendConditioned(*voiceNotes, 52);
+                    } else if (voiceNotes.error() == msl::Error::Cancelled) {
+                        out.error = "Cancelled";
+                        return out;
+                    }
+                }
+
+                std::sort(timedNotes.begin(), timedNotes.end(), [](const TimedNoteSec& a, const TimedNoteSec& b) {
+                    if (a.onset_sec != b.onset_sec) return a.onset_sec < b.onset_sec;
+                    return a.pitch < b.pitch;
+                });
+
                 backendUsed = "MuScriptor (" + cached_transcriber_->device().backend + ")";
             } else if (mslNotes.error() == msl::Error::Cancelled) {
                 out.error = "Cancelled";

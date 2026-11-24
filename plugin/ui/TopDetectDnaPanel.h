@@ -35,7 +35,7 @@ private:
 
     StyleScalerAudioProcessor& processor_;
     std::string last_library_sig_;
-    std::string active_genre_filter_{"All Genres"};
+    std::string active_genre_filter_{"All Songs"};
     bool drag_hover_ = false;
     TranscriptionService::TargetSlot target_slot_ = TranscriptionService::TargetSlot::SlotA;
     float capture_peak_ = 0.0f;
@@ -59,7 +59,8 @@ private:
     juce::ComboBox slot_b_combo_;
     juce::TextButton load_a_json_btn_{"JSON"};
     juce::TextButton load_b_json_btn_{"JSON"};
-    juce::TextButton save_blend_btn_{"Save Blend"};
+    juce::ComboBox mix_recipe_combo_;
+    juce::TextButton save_blend_btn_{"Save"};
 
     struct AxisSliderRow {
         juce::Label title;
@@ -77,8 +78,9 @@ private:
     juce::ComboBox key_mode_combo_;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> key_root_att_;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> key_mode_att_;
-    juce::TextButton regen_btn_{"Regenerate"};
-    juce::TextButton lock_seed_btn_{"Lock Seed"};
+    juce::TextButton regen_btn_{"Randomise"};
+    juce::TextButton orig_btn_{"Original"};
+    juce::TextButton lock_seed_btn_{"Lock"};
     juce::TextButton sync_github_btn_{"Sync GitHub"};
     juce::TextButton catalog_url_btn_{"URL"};
     juce::Label key_info_lbl_;

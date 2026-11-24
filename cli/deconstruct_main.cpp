@@ -142,6 +142,19 @@ std::string prettifyTitle(std::string s) {
     return out.empty() ? "Deconstructed Style" : out;
 }
 
+std::string stripTrackPrefix(std::string s) {
+    size_t i = 0;
+    while (i < s.size() && std::isdigit(static_cast<unsigned char>(s[i]))) ++i;
+    if (i > 0 && i < s.size()) {
+        while (i < s.size() &&
+               (s[i] == '.' || s[i] == '-' || s[i] == '_' || std::isspace(static_cast<unsigned char>(s[i])))) {
+            ++i;
+        }
+        if (i < s.size()) return s.substr(i);
+    }
+    return s;
+}
+
 std::string currentIsoUtc() {
     const auto now = std::chrono::system_clock::now();
     const std::time_t tt = std::chrono::system_clock::to_time_t(now);
@@ -212,17 +225,65 @@ bool loadCachedSong(const fs::path& cacheFile, TranscriptionService::Deconstruct
             }
         }
 
+        size_t pitchedCount = 0;
+        size_t chordCount = 0;
+        size_t melodyCount = 0;
         for (const auto& item : j["notes"]) {
             NoteEvent ev;
             ev.onset_beats = item.value("o", 0.0);
             ev.duration_beats = item.value("d", 0.25);
-            ev.pitch = item.value("p", 60);
-            ev.velocity = item.value("v", 96);
-            ev.channel = item.value("c", 1);
-            ev.is_drum = item.value("dr", false);
+            ev.pitch = std::clamp(item.value("p", 60), 0, 127);
+            ev.velocity = std::clamp(item.value("v", 96), 1, 127);
+            ev.is_drum = item.value("dr", false) || item.value("pr", 0) == 128;
             ev.program = item.value("pr", 0);
+
+            if (ev.is_drum) {
+                ev.channel = 10;
+            } else if (ev.program >= 32 && ev.program <= 39) {
+                ev.channel = 3;
+            } else if ((ev.program >= 52 && ev.program <= 54) || ev.program == 40 ||
+                       (ev.program >= 56 && ev.program <= 87) || (ev.program >= 104 && ev.program <= 111)) {
+                const bool isVoice = (ev.program >= 52 && ev.program <= 54);
+                if (isVoice && (ev.pitch < 45 || ev.pitch > 92)) continue;
+                if (!isVoice && (ev.pitch < 48 || ev.pitch > 96)) continue;
+                ev.channel = 2;
+                ++melodyCount;
+            } else {
+                ev.channel = 1;
+                ++chordCount;
+            }
+            if (!ev.is_drum) ++pitchedCount;
             out.song_input.notes.push_back(ev);
         }
+        if (pitchedCount == 0 || (chordCount == 0 && melodyCount == 0)) return false;
+
+        // Re-evaluate BPM with improved octave disambiguation and rescale beat timestamps if changed
+        const double cachedBpm = out.song_input.bpm;
+        if (out.metadata.bpm <= 20.0 && cachedBpm > 20.0) {
+            const double secPerBeat = 60.0 / cachedBpm;
+            std::vector<TimedNoteSec> timed;
+            timed.reserve(out.song_input.notes.size());
+            for (const auto& ev : out.song_input.notes) {
+                TimedNoteSec tn;
+                tn.onset_sec = ev.onset_beats * secPerBeat;
+                tn.offset_sec = tn.onset_sec + ev.duration_beats * secPerBeat;
+                tn.pitch = ev.pitch;
+                tn.velocity = ev.velocity;
+                tn.program = ev.program;
+                tn.is_drum = ev.is_drum;
+                timed.push_back(tn);
+            }
+            const double freshBpm = MidiStyleAnalyzer::estimateBpm(timed);
+            if (std::abs(freshBpm - cachedBpm) > 0.5) {
+                const double scaleFactor = freshBpm / cachedBpm;
+                for (auto& ev : out.song_input.notes) {
+                    ev.onset_beats *= scaleFactor;
+                    ev.duration_beats *= scaleFactor;
+                }
+                out.song_input.bpm = freshBpm;
+            }
+        }
+
         out.success = !out.song_input.notes.empty();
         return out.success;
     } catch (...) {
@@ -317,6 +378,7 @@ bool writeCatalogFromDir(const fs::path& stylesDir, const fs::path& catalogPath)
 
     nlohmann::json presetsArr = nlohmann::json::array();
     std::map<std::string, std::vector<std::string>> genresMap;
+    std::map<std::string, std::vector<std::string>> artistsMap;
     const fs::path catParent = catalogPath.has_parent_path() ? catalogPath.parent_path() : fs::current_path();
     const std::string stamp = currentIsoUtc();
 
@@ -348,7 +410,11 @@ bool writeCatalogFromDir(const fs::path& stylesDir, const fs::path& catalogPath)
         };
         if (!prof->tags.empty()) item["tags"] = prof->tags;
         if (!prof->genre_source.empty()) item["genre_source"] = prof->genre_source;
-        if (!prof->artist.empty()) item["artist"] = prof->artist;
+        if (!prof->artist.empty()) {
+            item["artist"] = prof->artist;
+            artistsMap[prof->artist].push_back(prof->id);
+        }
+        if (!prof->album.empty()) item["album"] = prof->album;
         presetsArr.push_back(std::move(item));
 
         const std::string gKey = prof->genre.empty() ? "Uncategorized" : prof->genre;
@@ -358,12 +424,16 @@ bool writeCatalogFromDir(const fs::path& stylesDir, const fs::path& catalogPath)
     for (auto& [_, ids] : genresMap) {
         std::sort(ids.begin(), ids.end());
     }
+    for (auto& [_, ids] : artistsMap) {
+        std::sort(ids.begin(), ids.end());
+    }
 
     nlohmann::json catalog = {
         {"schema_version", 1},
         {"catalog_name", "StyleScaler Preset Catalog"},
         {"updated_at", stamp},
         {"genres", genresMap},
+        {"artists", artistsMap},
         {"presets", presetsArr}
     };
 
@@ -954,10 +1024,23 @@ int main(int argc, char* argv[]) {
                 allFiles.push_back(in);
             }
         }
+        std::map<std::string, int> idCounts;
         for (const auto& f : allFiles) {
+            const auto meta = AudioMetadataReader::readFile(f);
+            const std::string fallbackTitle = prettifyTitle(stripTrackPrefix(pathToUtf8(f.stem())));
+            const std::string title = !meta.title.empty() ? meta.title : fallbackTitle;
+            const std::string artistPrefix = !meta.artist.empty()
+                                                 ? meta.artist
+                                                 : pathToUtf8(f.parent_path().filename());
+            std::string baseId = sanitizeSlug(artistPrefix + "_" + title);
+            const int seenIdx = ++idCounts[baseId];
+            if (seenIdx > 1) {
+                baseId += "_" + std::to_string(seenIdx);
+            }
+
             JobGroup g;
-            g.id = sanitizeSlug(pathToUtf8(f.stem()));
-            g.name = prettifyTitle(pathToUtf8(f.stem()));
+            g.id = baseId;
+            g.name = title;
             g.genre = !genreArg.empty() ? AudioMetadataReader::canonicalizeGenre(genreArg) : "";
             g.explicit_genre = !genreArg.empty();
             g.destJson = destRoot / (g.id + ".json");
@@ -982,7 +1065,7 @@ int main(int argc, char* argv[]) {
             const auto& f = job.files[idx];
             const auto fps = buildTrackFingerprints(f, maxSeconds, forceSpectral);
 
-            if (mergeExisting && profileContainsAnyTrack(job.destJson, fps)) {
+            if (mode != BatchMode::PerSong && mergeExisting && profileContainsAnyTrack(job.destJson, fps)) {
                 std::cout << "  ✓ [" << (idx + 1) << "/" << job.files.size() << "] "
                           << pathToUtf8(f.filename()) << " | [SKIP - already in profile]\n";
                 ++completedTracks;
@@ -1027,7 +1110,7 @@ int main(int argc, char* argv[]) {
             aopts.key_override_pc = keyOverride;
             aopts.mode_override = modeOverride;
 
-            const bool allowMerge = mergeExisting || jobInitialized;
+            const bool allowMerge = (mode == BatchMode::PerSong) ? false : (mergeExisting || jobInitialized);
             if (finalizeSingleSongProfile(job.destJson, ds.song_input, fps, std::move(aopts), allowMerge)) {
                 jobInitialized = true;
                 ++succeeded;

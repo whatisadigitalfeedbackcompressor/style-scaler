@@ -34,6 +34,7 @@ public:
 private:
     struct Voice {
         bool active = false;
+        bool attacking = false;
         bool releasing = false;
         int channel = 1; // 1=Chords, 2=Melody, 3=Bass
         int pitch = 60;

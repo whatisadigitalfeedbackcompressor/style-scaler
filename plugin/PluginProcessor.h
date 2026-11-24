@@ -96,12 +96,15 @@ public:
     EngineSnapshot getSnapshot() const;
     std::vector<StyleProfile> getPresetLibrary() const;
     std::vector<std::string> getAvailableGenres() const;
+    std::vector<std::string> getAvailableArtists() const;
     std::vector<StyleProfile> getPresetsForGenre(const std::string& genre) const;
     int findPresetIndexById(const std::string& id) const;
 
     void selectSlotAPreset(int libraryIndex);
     void selectSlotBPreset(int libraryIndex);
     void setSlotProfile(bool isSlotB, const StyleProfile& profile, bool addToLibrary = true);
+    void resetToSongOriginal(bool clearLocks = true);
+    void applyCrossSongRecipe(int recipeIndex);
 
     void setSlotLocked(size_t slotIndex, bool locked);
     void replaceSlotChord(size_t slotIndex, const std::string& romanSymbol, const RomanChord& chord);
@@ -205,7 +208,7 @@ private:
     StyleProfile blended_;
     std::vector<ProgressionSlot> progression_;
     GeneratedPattern pattern_;
-    uint64_t seed_ = 42ULL;
+    uint64_t seed_ = 0ULL;
     bool seed_locked_ = false;
     bool suppress_param_regen_ = false;
 

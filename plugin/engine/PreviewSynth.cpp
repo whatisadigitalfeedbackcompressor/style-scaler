@@ -64,13 +64,14 @@ void PreviewSynth::noteOn(int channel1Based, int pitch, float velocityNorm) noex
 
     auto& v = voices_[static_cast<size_t>(idx)];
     v.active = true;
+    v.attacking = true;
     v.releasing = false;
     v.channel = ch;
     v.pitch = p;
     v.velocity = std::clamp(velocityNorm, 0.05f, 1.0f);
     v.phase = 0.0;
     v.phase_inc = midiToHz(p) / sample_rate_;
-    v.env = 0.001;
+    v.env = 0.0;
     v.lp_state = 0.0;
     v.age = ++voice_counter_;
 }
@@ -136,13 +137,16 @@ void PreviewSynth::renderBlock(juce::AudioBuffer<float>& audioBuffer,
             if (!v.active) continue;
 
             if (!v.releasing) {
-                if (v.env < 1.0) {
-                    v.env = std::min(1.0, v.env + attackRate);
-                }
-                if (v.channel == 1) {
-                    v.env = std::max(0.35, v.env * decayChord);
+                if (v.attacking) {
+                    v.env += attackRate;
+                    if (v.env >= 1.0) {
+                        v.env = 1.0;
+                        v.attacking = false;
+                    }
+                } else if (v.channel == 1) {
+                    v.env = std::max(0.30, v.env * decayChord);
                 } else if (v.channel == 2) {
-                    v.env = std::max(0.18, v.env * decayMelody);
+                    v.env = std::max(0.14, v.env * decayMelody);
                 }
             } else {
                 const double rel = (v.channel == 3) ? releaseBass : (v.channel == 2 ? releaseMelody : releaseChord);
@@ -169,7 +173,7 @@ void PreviewSynth::renderBlock(juce::AudioBuffer<float>& audioBuffer,
                 // Warm Rhodes-style electric piano for chords
                 const double tine = 0.22 * v.velocity * std::sin(2.0 * p) + 0.08 * v.velocity * std::sin(3.0 * p);
                 const double raw = std::sin(p) + tine * (0.4 + 0.6 * v.env);
-                v.lp_state += 0.28 * (raw - v.lp_state);
+                v.lp_state += 0.22 * (raw - v.lp_state);
                 sample = v.lp_state * 0.20;
             }
 

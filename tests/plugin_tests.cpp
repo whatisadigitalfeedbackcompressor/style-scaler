@@ -678,3 +678,61 @@ TEST_CASE("Unicode non-CP1252 filenames (fullwidth question mark & curly apostro
 
     tmpDir.getParentDirectory().deleteRecursively();
 }
+
+TEST_CASE("PreviewSynth held chord and melody voices attack smoothly without jump and decay while held", "[synth][envelope]") {
+    PreviewSynth synth;
+    synth.prepare(44100.0);
+
+    juce::AudioBuffer<float> buf(2, 64);
+    buf.clear();
+    juce::MidiBuffer onMidi;
+    onMidi.addEvent(juce::MidiMessage::noteOn(1, 60, static_cast<juce::uint8>(127)), 0);
+    synth.renderBlock(buf, onMidi, 1.0f, true, true, true);
+
+    // Sample 0 should start near 0 (no instant 0.35 envelope jump)
+    CHECK(std::abs(buf.getSample(0, 0)) < 0.01f);
+
+    auto measureRms = [&](int numBlocks) {
+        double sq = 0.0;
+        int total = 0;
+        juce::MidiBuffer empty;
+        for (int b = 0; b < numBlocks; ++b) {
+            buf.clear();
+            synth.renderBlock(buf, empty, 1.0f, true, true, true);
+            for (int i = 0; i < buf.getNumSamples(); ++i) {
+                const float s = buf.getSample(0, i);
+                sq += static_cast<double>(s) * static_cast<double>(s);
+                ++total;
+            }
+        }
+        return std::sqrt(sq / std::max(1, total));
+    };
+
+    // Peak right after 5ms attack (~4 blocks) vs decayed level ~2.5s later
+    const double earlyRms = measureRms(8);
+    measureRms(1600);
+    const double lateRms = measureRms(20);
+    CHECK(earlyRms > 0.03);
+    CHECK(lateRms < earlyRms * 0.65);
+}
+
+TEST_CASE("StyleScalerAudioProcessor supports Song Original reset, Randomise, and B->A cross-song recipes", "[processor][recipe]") {
+    StyleScalerAudioProcessor proc;
+    proc.regenerateProgression(false, true);
+    CHECK(proc.getSnapshot().seed != 0ULL);
+
+    proc.resetToSongOriginal(true);
+    CHECK(proc.getSnapshot().seed == 0ULL);
+
+    proc.applyCrossSongRecipe(1); // B Groove -> A
+    CHECK(proc.apvts().getRawParameterValue(ParamIDs::harmonyBlend)->load() == Approx(0.0f).margin(0.01f));
+    CHECK(proc.apvts().getRawParameterValue(ParamIDs::rhythmBlend)->load() == Approx(1.0f).margin(0.01f));
+
+    proc.applyCrossSongRecipe(2); // B Writing -> A
+    CHECK(proc.apvts().getRawParameterValue(ParamIDs::harmonyBlend)->load() == Approx(0.0f).margin(0.01f));
+    CHECK(proc.apvts().getRawParameterValue(ParamIDs::melodyBlend)->load() == Approx(1.0f).margin(0.01f));
+
+    proc.applyCrossSongRecipe(3); // B Theory -> A
+    CHECK(proc.apvts().getRawParameterValue(ParamIDs::harmonyBlend)->load() == Approx(1.0f).margin(0.01f));
+    CHECK(proc.apvts().getRawParameterValue(ParamIDs::rhythmBlend)->load() == Approx(0.0f).margin(0.01f));
+}

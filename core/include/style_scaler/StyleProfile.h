@@ -29,6 +29,7 @@ struct HarmonyAxis {
     std::vector<ChordVocabEntry> vocabulary;
     std::map<std::string, std::map<std::string, double>> transitions;
     double chromaticism = 0.15;
+    std::vector<std::string> reference_progression;
 
     bool operator==(const HarmonyAxis&) const = default;
 };
@@ -47,6 +48,9 @@ struct RhythmAxis {
         1.0, 0.0, 0.0, 0.35, 0.0, 0.0, 0.45, 0.0,
         0.25, 0.0, 0.55, 0.0, 0.0, 0.2, 0.3, 0.0
     };
+    std::array<double, 16> chord_pattern = {};
+    std::array<double, 16> bass_pattern = {};
+    std::array<double, 16> melody_pattern = {};
     double syncopation = 0.35;
     double anticipation = 0.2;
     double swing = 0.0;
@@ -74,6 +78,15 @@ struct VoicingAxis {
     bool operator==(const VoicingAxis&) const = default;
 };
 
+struct MelodyMotifStep {
+    int step16 = 0;               // 0..31 (2-bar 16th-note position)
+    int scale_degree_offset = 0;  // diatonic steps relative to phrase anchor
+    double duration_steps = 2.0;  // duration in 16th notes
+    bool is_chord_tone = true;
+
+    bool operator==(const MelodyMotifStep&) const = default;
+};
+
 struct MelodyAxis {
     // Signed semitone steps -12..+12, index = delta + 12
     std::array<double, 25> interval_histogram = {};
@@ -85,6 +98,7 @@ struct MelodyAxis {
     int register_low = 64;
     int register_high = 86;
     double legato_ratio = 0.7;
+    std::vector<MelodyMotifStep> reference_motif;
 
     bool operator==(const MelodyAxis&) const = default;
 };

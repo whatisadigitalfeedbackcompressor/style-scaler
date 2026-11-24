@@ -61,6 +61,42 @@ HarmonyAxis blendHarmony(const HarmonyAxis& a, const HarmonyAxis& b, double w) {
     std::sort(out.vocabulary.begin(), out.vocabulary.end(),
               [](const ChordVocabEntry& x, const ChordVocabEntry& y) { return x.weight > y.weight; });
 
+    double vSum = 0.0, cSum = 0.0;
+    for (const auto& e : out.vocabulary) {
+        vSum += std::max(0.0, e.weight);
+        cSum += std::max(0.0, e.cadence_weight);
+    }
+    if (vSum > 0.0) {
+        for (auto& e : out.vocabulary) e.weight /= vSum;
+    }
+    if (cSum > 0.0) {
+        for (auto& e : out.vocabulary) e.cadence_weight /= cSum;
+    }
+
+    if (!a.reference_progression.empty() && !b.reference_progression.empty()) {
+        if (w < 0.35) {
+            out.reference_progression = a.reference_progression;
+        } else if (w > 0.65) {
+            out.reference_progression = b.reference_progression;
+        } else if (a.reference_progression.size() >= 4 && b.reference_progression.size() >= 4) {
+            const size_t halfA = a.reference_progression.size() / 2;
+            out.reference_progression.assign(
+                a.reference_progression.begin(),
+                a.reference_progression.begin() + static_cast<ptrdiff_t>(halfA));
+            const size_t startB = std::min(halfA, b.reference_progression.size());
+            out.reference_progression.insert(
+                out.reference_progression.end(),
+                b.reference_progression.begin() + static_cast<ptrdiff_t>(startB),
+                b.reference_progression.end());
+        } else {
+            out.reference_progression = (w < 0.5) ? a.reference_progression : b.reference_progression;
+        }
+    } else if (!a.reference_progression.empty()) {
+        out.reference_progression = a.reference_progression;
+    } else if (!b.reference_progression.empty()) {
+        out.reference_progression = b.reference_progression;
+    }
+
     const auto priorA = buildStationaryPrior(a);
     const auto priorB = buildStationaryPrior(b);
 
@@ -110,6 +146,31 @@ RhythmAxis blendRhythm(const RhythmAxis& a, const RhythmAxis& b, double w) {
     if (w <= 0.0) return a;
     if (w >= 1.0) return b;
 
+    auto hasPat = [](const std::array<double, 16>& p) {
+        for (double v : p) if (v > 1e-6) return true;
+        return false;
+    };
+    auto blendPat = [&](const std::array<double, 16>& pa, const std::array<double, 16>& ga,
+                        const std::array<double, 16>& pb, const std::array<double, 16>& gb) {
+        std::array<double, 16> pat{};
+        const bool ha = hasPat(pa), hb = hasPat(pb);
+        if (!ha && !hb) return pat;
+        const auto& srcA = ha ? pa : ga;
+        const auto& srcB = hb ? pb : gb;
+        double mx = 0.0;
+        for (size_t i = 0; i < 16; ++i) {
+            pat[i] = std::clamp(lerp(srcA[i], srcB[i], w), 0.0, 1.0);
+            mx = std::max(mx, pat[i]);
+        }
+        if (mx > 1e-6) {
+            for (double& v : pat) {
+                v /= mx;
+                if (v < 0.25) v = 0.0;
+            }
+        }
+        return pat;
+    };
+
     RhythmAxis out;
     out.subdivision = 16;
     for (size_t i = 0; i < 16; ++i) {
@@ -117,6 +178,9 @@ RhythmAxis blendRhythm(const RhythmAxis& a, const RhythmAxis& b, double w) {
         out.melody_onset_grid[i] = std::clamp(lerp(a.melody_onset_grid[i], b.melody_onset_grid[i], w), 0.0, 1.0);
         out.bass_onset_grid[i] = std::clamp(lerp(a.bass_onset_grid[i], b.bass_onset_grid[i], w), 0.0, 1.0);
     }
+    out.chord_pattern = blendPat(a.chord_pattern, a.chord_onset_grid, b.chord_pattern, b.chord_onset_grid);
+    out.bass_pattern = blendPat(a.bass_pattern, a.bass_onset_grid, b.bass_pattern, b.bass_onset_grid);
+    out.melody_pattern = blendPat(a.melody_pattern, a.melody_onset_grid, b.melody_pattern, b.melody_onset_grid);
     out.syncopation = std::clamp(lerp(a.syncopation, b.syncopation, w), 0.0, 1.0);
     out.anticipation = std::clamp(lerp(a.anticipation, b.anticipation, w), 0.0, 1.0);
     out.swing = std::clamp(lerp(a.swing, b.swing, w), 0.0, 1.0);
@@ -172,6 +236,27 @@ MelodyAxis blendMelody(const MelodyAxis& a, const MelodyAxis& b, double w) {
     out.register_low = lerpRoundInt(a.register_low, b.register_low, w);
     out.register_high = std::max(out.register_low + 6, lerpRoundInt(a.register_high, b.register_high, w));
     out.legato_ratio = std::clamp(lerp(a.legato_ratio, b.legato_ratio, w), 0.1, 1.2);
+    if (!a.reference_motif.empty() && !b.reference_motif.empty()) {
+        if (w < 0.35) {
+            out.reference_motif = a.reference_motif;
+        } else if (w > 0.65) {
+            out.reference_motif = b.reference_motif;
+        } else {
+            for (const auto& st : a.reference_motif) {
+                if (st.step16 < 16) out.reference_motif.push_back(st);
+            }
+            for (const auto& st : b.reference_motif) {
+                if (st.step16 >= 16) out.reference_motif.push_back(st);
+            }
+            if (out.reference_motif.empty()) {
+                out.reference_motif = (w < 0.5) ? a.reference_motif : b.reference_motif;
+            }
+        }
+    } else if (!a.reference_motif.empty()) {
+        out.reference_motif = a.reference_motif;
+    } else if (!b.reference_motif.empty()) {
+        out.reference_motif = b.reference_motif;
+    }
     return out;
 }
 

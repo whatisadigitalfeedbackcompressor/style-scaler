@@ -12,22 +12,20 @@ bool isSupportedDropExtension(const juce::String& filePath) {
 }
 
 juce::String formatPresetComboLabel(const StyleProfile& prof) {
-    const std::string g = prof.genre.empty() ? std::string("Uncategorized") : prof.genre;
-    auto lowEq = [](const std::string& a, const std::string& b) {
-        if (a.size() != b.size()) return false;
-        for (size_t i = 0; i < a.size(); ++i) {
-            if (std::tolower(static_cast<unsigned char>(a[i])) !=
-                std::tolower(static_cast<unsigned char>(b[i]))) {
-                return false;
-            }
-        }
-        return true;
-    };
-    if (lowEq(prof.name, g)) {
-        const int tc = std::max(1, prof.track_count);
-        return juce::String(g) + " (" + juce::String(tc) + (tc == 1 ? " track)" : " tracks)");
+    const auto tonicSv = pitchClassName(prof.harmony.tonic_pc);
+    const auto modeSv = modeName(prof.harmony.mode);
+    const int bpmInt = static_cast<int>(std::llround(prof.default_bpm));
+    std::string modeShort(modeSv);
+    if (modeShort.size() > 3) modeShort.resize(3);
+
+    if (!prof.artist.empty()) {
+        return juce::String(prof.name) + juce::String::fromUTF8(" — ") + juce::String(prof.artist) +
+               " (" + juce::String(std::string(tonicSv)) + " " + juce::String(modeShort) +
+               juce::String::fromUTF8(" · ") + juce::String(bpmInt) + ")";
     }
-    return juce::String(prof.name) + " (" + juce::String(g) + ")";
+    const std::string g = prof.genre.empty() ? std::string("Style") : prof.genre;
+    return juce::String(prof.name) + " (" + juce::String(g) +
+           juce::String::fromUTF8(" · ") + juce::String(bpmInt) + ")";
 }
 
 std::string buildLibrarySignature(const std::vector<StyleProfile>& lib) {
@@ -37,6 +35,8 @@ std::string buildLibrarySignature(const std::vector<StyleProfile>& lib) {
         sig.append(p.id);
         sig.push_back('|');
         sig.append(p.genre);
+        sig.push_back('|');
+        sig.append(p.artist);
         sig.push_back(':');
         sig.append(std::to_string(p.track_count));
     }
@@ -95,11 +95,11 @@ TopDetectDnaPanel::TopDetectDnaPanel(StyleScalerAudioProcessor& processor)
     status_lbl_.setFont(juce::Font(juce::FontOptions(12.5f)));
     status_lbl_.setColour(juce::Label::textColourId, Theme::textMuted);
 
-    // Center: Slot A <-> Slot B + Genre Filter + 4 Axis Blend Sliders
+    // Center: Slot A <-> Slot B + Genre/Artist Filter + B->A Recipe + 4 Axis Blend Sliders
     addAndMakeVisible(genre_filter_combo_);
     genre_filter_combo_.onChange = [this]() {
         const auto chosen = genre_filter_combo_.getText().toStdString();
-        active_genre_filter_ = chosen.empty() ? std::string("All Genres") : chosen;
+        active_genre_filter_ = chosen.empty() ? std::string("All Songs") : chosen;
         populatePresetCombos();
     };
 
@@ -120,6 +120,20 @@ TopDetectDnaPanel::TopDetectDnaPanel(StyleScalerAudioProcessor& processor)
 
     addAndMakeVisible(load_b_json_btn_);
     load_b_json_btn_.onClick = [this]() { handleLoadJsonProfile(true); };
+
+    addAndMakeVisible(mix_recipe_combo_);
+    mix_recipe_combo_.setTextWhenNothingSelected("B -> A");
+    mix_recipe_combo_.addItem("A Original", 1);
+    mix_recipe_combo_.addItem("B Groove -> A", 2);
+    mix_recipe_combo_.addItem("B Writing -> A", 3);
+    mix_recipe_combo_.addItem("B Theory -> A", 4);
+    mix_recipe_combo_.addItem("50/50 Blend", 5);
+    mix_recipe_combo_.onChange = [this]() {
+        const int id = mix_recipe_combo_.getSelectedId();
+        if (id >= 1 && id <= 5) {
+            processor_.applyCrossSongRecipe(id - 1);
+        }
+    };
 
     addAndMakeVisible(save_blend_btn_);
     save_blend_btn_.onClick = [this]() { handleSaveBlendedProfile(); };
@@ -176,8 +190,15 @@ TopDetectDnaPanel::TopDetectDnaPanel(StyleScalerAudioProcessor& processor)
         processor_.regenerateProgression(true, true);
     };
 
+    addAndMakeVisible(orig_btn_);
+    orig_btn_.setColour(juce::TextButton::buttonColourId, Theme::probEmerald.withAlpha(0.20f));
+    orig_btn_.onClick = [this]() {
+        processor_.resetToSongOriginal(true);
+    };
+
     addAndMakeVisible(lock_seed_btn_);
     lock_seed_btn_.setClickingTogglesState(true);
+    lock_seed_btn_.setTooltip("Lock Seed");
     lock_seed_btn_.onClick = [this]() {
         processor_.setSeedLock(lock_seed_btn_.getToggleState());
         refreshFromProcessor();
@@ -208,19 +229,41 @@ TopDetectDnaPanel::TopDetectDnaPanel(StyleScalerAudioProcessor& processor)
 
 void TopDetectDnaPanel::populateGenreFilter() {
     const auto genres = processor_.getAvailableGenres();
-    genre_filter_combo_.clear(juce::dontSendNotification);
-    genre_filter_combo_.addItem("All Genres", 1);
+    const auto artists = processor_.getAvailableArtists();
+    const auto lib = processor_.getPresetLibrary();
+    const bool hasStarters = std::any_of(lib.begin(), lib.end(), [](const StyleProfile& p) { return p.artist.empty(); });
 
+    genre_filter_combo_.clear(juce::dontSendNotification);
+    genre_filter_combo_.addItem("All Songs", 1);
+
+    int nextId = 2;
     int matchedId = 1;
-    for (size_t i = 0; i < genres.size(); ++i) {
-        const int itemId = static_cast<int>(i) + 2;
-        genre_filter_combo_.addItem(genres[i], itemId);
-        if (genres[i] == active_genre_filter_) {
-            matchedId = itemId;
+
+    if (!genres.empty()) {
+        genre_filter_combo_.addSectionHeading("Genres");
+        for (const auto& g : genres) {
+            const int itemId = nextId++;
+            genre_filter_combo_.addItem(g, itemId);
+            if (g == active_genre_filter_) matchedId = itemId;
         }
     }
+    if (!artists.empty() || hasStarters) {
+        genre_filter_combo_.addSectionHeading("Artists & Styles");
+        for (const auto& a : artists) {
+            const std::string label = "Artist: " + a;
+            const int itemId = nextId++;
+            genre_filter_combo_.addItem(label, itemId);
+            if (label == active_genre_filter_) matchedId = itemId;
+        }
+        if (hasStarters) {
+            const int itemId = nextId++;
+            genre_filter_combo_.addItem("Starter Styles", itemId);
+            if (active_genre_filter_ == "Starter Styles") matchedId = itemId;
+        }
+    }
+
     if (matchedId == 1) {
-        active_genre_filter_ = "All Genres";
+        active_genre_filter_ = "All Songs";
     }
     genre_filter_combo_.setSelectedId(matchedId, juce::dontSendNotification);
 }
@@ -233,18 +276,34 @@ void TopDetectDnaPanel::populatePresetCombos() {
     slot_a_combo_.clear(juce::dontSendNotification);
     slot_b_combo_.clear(juce::dontSendNotification);
 
-    const bool showAll = (active_genre_filter_.empty() || active_genre_filter_ == "All Genres");
+    const bool showAll = (active_genre_filter_.empty() ||
+                          active_genre_filter_ == "All Songs" ||
+                          active_genre_filter_ == "All Genres");
+    const std::string artistPrefix = "Artist: ";
+    const bool filterArtist = (active_genre_filter_.rfind(artistPrefix, 0) == 0);
+    const std::string targetArtist = filterArtist ? active_genre_filter_.substr(artistPrefix.size()) : "";
+    const bool filterStarters = (active_genre_filter_ == "Starter Styles");
+
     std::string lastHeading;
 
     for (size_t i = 0; i < lib.size(); ++i) {
         const std::string g = lib[i].genre.empty() ? std::string("Uncategorized") : lib[i].genre;
-        if (!showAll && g != active_genre_filter_) {
-            continue;
+        if (!showAll) {
+            if (filterArtist) {
+                if (lib[i].artist != targetArtist) continue;
+            } else if (filterStarters) {
+                if (!lib[i].artist.empty()) continue;
+            } else if (g != active_genre_filter_) {
+                continue;
+            }
         }
-        if (showAll && g != lastHeading) {
-            slot_a_combo_.addSectionHeading(g);
-            slot_b_combo_.addSectionHeading(g);
-            lastHeading = g;
+        const std::string heading = !lib[i].artist.empty()
+                                        ? (g + " — " + lib[i].artist)
+                                        : (g + " (Starters)");
+        if (heading != lastHeading) {
+            slot_a_combo_.addSectionHeading(juce::String::fromUTF8(heading.c_str()));
+            slot_b_combo_.addSectionHeading(juce::String::fromUTF8(heading.c_str()));
+            lastHeading = heading;
         }
         const int itemId = static_cast<int>(i) + 1; // Preserve 1-based index into processor_.getPresetLibrary()
         const juce::String label = formatPresetComboLabel(lib[i]);
@@ -347,8 +406,27 @@ void TopDetectDnaPanel::refreshFromProcessor() {
         juce::dontSendNotification);
 
     lock_seed_btn_.setToggleState(processor_.isSeedLocked(), juce::dontSendNotification);
-    seed_lbl_.setText("Seed: " + juce::String(static_cast<juce::int64>(snap.seed & 0xFFFFFFFFULL)),
-                      juce::dontSendNotification);
+    if (snap.seed == 0ULL) {
+        seed_lbl_.setText("Mode: Song Original", juce::dontSendNotification);
+    } else {
+        seed_lbl_.setText("Randomised #" + juce::String(static_cast<juce::int64>(snap.seed & 0xFFFFFFFFULL)),
+                          juce::dontSendNotification);
+    }
+
+    auto nearVal = [](double a, double b) { return std::abs(a - b) <= 0.025; };
+    const double hB = processor_.apvts().getRawParameterValue(ParamIDs::harmonyBlend)->load();
+    const double rB = processor_.apvts().getRawParameterValue(ParamIDs::rhythmBlend)->load();
+    const double vB = processor_.apvts().getRawParameterValue(ParamIDs::voicingBlend)->load();
+    const double mB = processor_.apvts().getRawParameterValue(ParamIDs::melodyBlend)->load();
+    int matchedRecipe = 0;
+    if (nearVal(hB, 0.0) && nearVal(rB, 0.0) && nearVal(vB, 0.0) && nearVal(mB, 0.0)) matchedRecipe = 1;
+    else if (nearVal(hB, 0.0) && nearVal(rB, 1.0) && nearVal(vB, 0.25) && nearVal(mB, 0.0)) matchedRecipe = 2;
+    else if (nearVal(hB, 0.0) && nearVal(rB, 0.65) && nearVal(vB, 0.45) && nearVal(mB, 1.0)) matchedRecipe = 3;
+    else if (nearVal(hB, 1.0) && nearVal(rB, 0.0) && nearVal(vB, 0.45) && nearVal(mB, 0.0)) matchedRecipe = 4;
+    else if (nearVal(hB, 0.5) && nearVal(rB, 0.5) && nearVal(vB, 0.5) && nearVal(mB, 0.5)) matchedRecipe = 5;
+    if (mix_recipe_combo_.getSelectedId() != matchedRecipe) {
+        mix_recipe_combo_.setSelectedId(matchedRecipe, juce::dontSendNotification);
+    }
 
     const bool syncing = processor_.isCatalogSyncRunning();
     sync_github_btn_.setButtonText(syncing ? "Syncing..." : "Sync GitHub");
@@ -469,22 +547,29 @@ void TopDetectDnaPanel::resized() {
         auto b = center_card_.reduced(10, 8);
         b.removeFromTop(20);
         auto slotRow = b.removeFromTop(26);
-        save_blend_btn_.setBounds(slotRow.removeFromRight(72));
-        slotRow.removeFromRight(6);
+        const int srW = slotRow.getWidth();
+        const int saveW = std::min(50, std::max(32, srW / 6));
+        const int mixW = std::min(76, std::max(46, srW / 4));
+        save_blend_btn_.setBounds(slotRow.removeFromRight(saveW));
+        slotRow.removeFromRight(4);
+        mix_recipe_combo_.setBounds(slotRow.removeFromRight(mixW));
+        slotRow.removeFromRight(4);
 
         const int slotSpace = slotRow.getWidth();
-        auto leftHalf = slotRow.removeFromLeft(slotSpace / 2 - 4);
-        slotRow.removeFromLeft(8);
+        auto leftHalf = slotRow.removeFromLeft(std::max(0, slotSpace / 2 - 4));
+        slotRow.removeFromLeft(std::min(8, slotRow.getWidth()));
         auto rightHalf = slotRow;
 
-        leftHalf.removeFromLeft(12); // cyan dot
-        load_a_json_btn_.setBounds(leftHalf.removeFromRight(42));
-        leftHalf.removeFromRight(4);
+        const int jsonW = std::min(40, std::max(24, leftHalf.getWidth() / 3));
+        leftHalf.removeFromLeft(std::min(12, leftHalf.getWidth())); // cyan dot
+        load_a_json_btn_.setBounds(leftHalf.removeFromRight(jsonW));
+        leftHalf.removeFromRight(std::min(4, leftHalf.getWidth()));
         slot_a_combo_.setBounds(leftHalf);
 
-        rightHalf.removeFromLeft(12); // violet dot
-        load_b_json_btn_.setBounds(rightHalf.removeFromRight(42));
-        rightHalf.removeFromRight(4);
+        const int jsonWR = std::min(40, std::max(24, rightHalf.getWidth() / 3));
+        rightHalf.removeFromLeft(std::min(12, rightHalf.getWidth())); // violet dot
+        load_b_json_btn_.setBounds(rightHalf.removeFromRight(jsonWR));
+        rightHalf.removeFromRight(std::min(4, rightHalf.getWidth()));
         slot_b_combo_.setBounds(rightHalf);
 
         b.removeFromTop(8);
@@ -517,9 +602,14 @@ void TopDetectDnaPanel::resized() {
 
         b.removeFromTop(6);
         auto regenRow = b.removeFromTop(26);
-        regen_btn_.setBounds(regenRow.removeFromLeft(regenRow.getWidth() - 88));
-        regenRow.removeFromLeft(6);
-        lock_seed_btn_.setBounds(regenRow);
+        const int rw = regenRow.getWidth();
+        const int lockW = std::max(24, static_cast<int>(rw * 0.27f));
+        const int origW = std::max(28, static_cast<int>(rw * 0.32f));
+        lock_seed_btn_.setBounds(regenRow.removeFromRight(lockW));
+        regenRow.removeFromRight(3);
+        orig_btn_.setBounds(regenRow.removeFromRight(origW));
+        regenRow.removeFromRight(3);
+        regen_btn_.setBounds(regenRow);
 
         b.removeFromTop(5);
         seed_lbl_.setBounds(b.removeFromTop(17));

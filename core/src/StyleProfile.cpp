@@ -79,12 +79,14 @@ StyleProfile makeDefaultStyleProfile() {
 }
 
 void normalizeHarmonyAndMelody(HarmonyAxis& harmony, MelodyAxis& melody) {
-    // Normalize vocabulary weights
+    // Normalize vocabulary weights and cadence_weight
     double vocabSum = 0.0;
+    double cadenceSum = 0.0;
     for (auto& entry : harmony.vocabulary) {
         entry.weight = std::max(0.0, entry.weight);
         entry.cadence_weight = std::max(0.0, entry.cadence_weight);
         vocabSum += entry.weight;
+        cadenceSum += entry.cadence_weight;
     }
     if (!harmony.vocabulary.empty()) {
         if (vocabSum <= 0.0) {
@@ -92,6 +94,9 @@ void normalizeHarmonyAndMelody(HarmonyAxis& harmony, MelodyAxis& melody) {
             for (auto& entry : harmony.vocabulary) entry.weight = uniform;
         } else {
             for (auto& entry : harmony.vocabulary) entry.weight /= vocabSum;
+        }
+        if (cadenceSum > 0.0) {
+            for (auto& entry : harmony.vocabulary) entry.cadence_weight /= cadenceSum;
         }
     }
 
@@ -261,6 +266,13 @@ ValidationResult validate(const StyleProfile& profile) {
 
 namespace {
 
+bool hasNonZeroPattern(const std::array<double, 16>& p) noexcept {
+    for (double v : p) {
+        if (v > 1e-6) return true;
+    }
+    return false;
+}
+
 nlohmann::json harmonyToJson(const HarmonyAxis& h) {
     nlohmann::json vocabJson = nlohmann::json::array();
     for (const auto& entry : h.vocabulary) {
@@ -274,17 +286,21 @@ nlohmann::json harmonyToJson(const HarmonyAxis& h) {
             {"cadence_weight", entry.cadence_weight}
         });
     }
-    return {
+    nlohmann::json j = {
         {"tonic_pc", h.tonic_pc},
         {"mode", std::string(modeName(h.mode))},
         {"vocabulary", vocabJson},
         {"transitions", h.transitions},
         {"chromaticism", h.chromaticism}
     };
+    if (!h.reference_progression.empty()) {
+        j["reference_progression"] = h.reference_progression;
+    }
+    return j;
 }
 
 nlohmann::json rhythmToJson(const RhythmAxis& r) {
-    return {
+    nlohmann::json j = {
         {"subdivision", r.subdivision},
         {"chord_onset_grid", r.chord_onset_grid},
         {"melody_onset_grid", r.melody_onset_grid},
@@ -295,6 +311,10 @@ nlohmann::json rhythmToJson(const RhythmAxis& r) {
         {"harmonic_pacing", r.harmonic_pacing},
         {"sustain_ratio", r.sustain_ratio}
     };
+    if (hasNonZeroPattern(r.chord_pattern)) j["chord_pattern"] = r.chord_pattern;
+    if (hasNonZeroPattern(r.bass_pattern)) j["bass_pattern"] = r.bass_pattern;
+    if (hasNonZeroPattern(r.melody_pattern)) j["melody_pattern"] = r.melody_pattern;
+    return j;
 }
 
 nlohmann::json voicingToJson(const VoicingAxis& v) {
@@ -316,7 +336,7 @@ nlohmann::json voicingToJson(const VoicingAxis& v) {
 }
 
 nlohmann::json melodyToJson(const MelodyAxis& m) {
-    return {
+    nlohmann::json j = {
         {"interval_histogram", m.interval_histogram},
         {"chord_tone_ratio", m.chord_tone_ratio},
         {"tension_tone_ratio", m.tension_tone_ratio},
@@ -327,6 +347,19 @@ nlohmann::json melodyToJson(const MelodyAxis& m) {
         {"register_high", m.register_high},
         {"legato_ratio", m.legato_ratio}
     };
+    if (!m.reference_motif.empty()) {
+        nlohmann::json motifArr = nlohmann::json::array();
+        for (const auto& step : m.reference_motif) {
+            motifArr.push_back({
+                {"step16", step.step16},
+                {"deg", step.scale_degree_offset},
+                {"dur", step.duration_steps},
+                {"ct", step.is_chord_tone}
+            });
+        }
+        j["reference_motif"] = std::move(motifArr);
+    }
+    return j;
 }
 
 double reqNumField(const nlohmann::json& obj, const char* key, double fallback, std::vector<std::string>& errs) {
@@ -397,6 +430,14 @@ HarmonyAxis harmonyFromJson(const nlohmann::json& h, std::vector<std::string>& e
             out.transitions[it.key()] = std::move(row);
         }
     }
+    if (h.contains("reference_progression") && h["reference_progression"].is_array()) {
+        for (const auto& s : h["reference_progression"]) {
+            if (s.is_string()) {
+                auto sym = s.get<std::string>();
+                if (!sym.empty()) out.reference_progression.push_back(std::move(sym));
+            }
+        }
+    }
     return out;
 }
 
@@ -417,6 +458,15 @@ RhythmAxis rhythmFromJson(const nlohmann::json& r, std::vector<std::string>& err
         out.bass_onset_grid = parseDoubleArray<16>(r["bass_onset_grid"], "rhythm.bass_onset_grid", errs);
     } else {
         errs.push_back("Missing rhythm.bass_onset_grid");
+    }
+    if (r.contains("chord_pattern")) {
+        out.chord_pattern = parseDoubleArray<16>(r["chord_pattern"], "rhythm.chord_pattern", errs);
+    }
+    if (r.contains("bass_pattern")) {
+        out.bass_pattern = parseDoubleArray<16>(r["bass_pattern"], "rhythm.bass_pattern", errs);
+    }
+    if (r.contains("melody_pattern")) {
+        out.melody_pattern = parseDoubleArray<16>(r["melody_pattern"], "rhythm.melody_pattern", errs);
     }
     out.syncopation = reqNumField(r, "syncopation", 0.35, errs);
     out.anticipation = reqNumField(r, "anticipation", 0.2, errs);
@@ -459,6 +509,17 @@ MelodyAxis melodyFromJson(const nlohmann::json& m, std::vector<std::string>& err
     out.register_low = m.value("register_low", 64);
     out.register_high = m.value("register_high", 86);
     out.legato_ratio = reqNumField(m, "legato_ratio", 0.7, errs);
+    if (m.contains("reference_motif") && m["reference_motif"].is_array()) {
+        for (const auto& item : m["reference_motif"]) {
+            if (!item.is_object()) continue;
+            MelodyMotifStep step;
+            step.step16 = std::clamp(item.value("step16", 0), 0, 31);
+            step.scale_degree_offset = std::clamp(item.value("deg", 0), -14, 14);
+            step.duration_steps = std::clamp(item.value("dur", 2.0), 0.5, 16.0);
+            step.is_chord_tone = item.value("ct", true);
+            out.reference_motif.push_back(step);
+        }
+    }
     return out;
 }
 

@@ -189,6 +189,8 @@ void StyleScalerAudioProcessor::loadBundledAndUserPresets() {
         };
         const std::string ga = low(a.genre), gb = low(b.genre);
         if (ga != gb) return ga < gb;
+        const std::string aa = low(a.artist), ab = low(b.artist);
+        if (aa != ab) return aa < ab;
         return low(a.name) < low(b.name);
     });
 }
@@ -461,6 +463,27 @@ std::vector<std::string> StyleScalerAudioProcessor::getAvailableGenres() const {
     return genres;
 }
 
+std::vector<std::string> StyleScalerAudioProcessor::getAvailableArtists() const {
+    std::lock_guard<std::mutex> lk(state_mutex_);
+    std::vector<std::string> artists;
+    for (const auto& p : preset_library_) {
+        if (!p.artist.empty() && std::find(artists.begin(), artists.end(), p.artist) == artists.end()) {
+            artists.push_back(p.artist);
+        }
+    }
+    std::sort(artists.begin(), artists.end(), [](const std::string& a, const std::string& b) {
+        auto low = [](const std::string& s) {
+            std::string r = s;
+            std::transform(r.begin(), r.end(), r.begin(), [](unsigned char c) {
+                return static_cast<char>(std::tolower(c));
+            });
+            return r;
+        };
+        return low(a) < low(b);
+    });
+    return artists;
+}
+
 std::vector<StyleProfile> StyleScalerAudioProcessor::getPresetsForGenre(const std::string& genre) const {
     std::lock_guard<std::mutex> lk(state_mutex_);
     if (genre.empty() || genre == "All Genres") {
@@ -491,9 +514,11 @@ void StyleScalerAudioProcessor::selectSlotAPreset(int libraryIndex) {
         if (libraryIndex < 0 || static_cast<size_t>(libraryIndex) >= preset_library_.size()) return;
         chosen = preset_library_[static_cast<size_t>(libraryIndex)];
         slot_a_ = chosen;
+        for (auto& s : progression_) s.locked = false;
+        if (!seed_locked_) seed_ = 0ULL;
     }
     syncKeyParamsFromProfile(chosen);
-    scheduleBackgroundRegen(true, true);
+    scheduleBackgroundRegen(true, false);
 }
 
 void StyleScalerAudioProcessor::selectSlotBPreset(int libraryIndex) {
@@ -508,8 +533,13 @@ void StyleScalerAudioProcessor::selectSlotBPreset(int libraryIndex) {
 void StyleScalerAudioProcessor::setSlotProfile(bool isSlotB, const StyleProfile& profile, bool addToLibrary) {
     {
         std::lock_guard<std::mutex> lk(state_mutex_);
-        if (isSlotB) slot_b_ = profile;
-        else slot_a_ = profile;
+        if (isSlotB) {
+            slot_b_ = profile;
+        } else {
+            slot_a_ = profile;
+            for (auto& s : progression_) s.locked = false;
+            if (!seed_locked_) seed_ = 0ULL;
+        }
 
         if (addToLibrary) {
             auto it = std::find_if(preset_library_.begin(), preset_library_.end(),
@@ -521,6 +551,41 @@ void StyleScalerAudioProcessor::setSlotProfile(bool isSlotB, const StyleProfile&
     if (!isSlotB) {
         syncKeyParamsFromProfile(profile);
     }
+    scheduleBackgroundRegen(true, isSlotB);
+}
+
+void StyleScalerAudioProcessor::resetToSongOriginal(bool clearLocks) {
+    {
+        std::lock_guard<std::mutex> lk(state_mutex_);
+        seed_ = 0ULL;
+        if (clearLocks) {
+            for (auto& s : progression_) s.locked = false;
+        }
+    }
+    scheduleBackgroundRegen(true, !clearLocks);
+}
+
+void StyleScalerAudioProcessor::applyCrossSongRecipe(int recipeIndex) {
+    double h = 0.0, r = 0.0, v = 0.0, m = 0.0;
+    switch (recipeIndex) {
+        case 0: h = 0.0; r = 0.0;  v = 0.0;  m = 0.0; break; // A Original
+        case 1: h = 0.0; r = 1.0;  v = 0.25; m = 0.0; break; // B Groove -> A
+        case 2: h = 0.0; r = 0.65; v = 0.45; m = 1.0; break; // B Writing -> A
+        case 3: h = 1.0; r = 0.0;  v = 0.45; m = 0.0; break; // B Theory -> A
+        case 4: h = 0.5; r = 0.5;  v = 0.5;  m = 0.5; break; // 50/50 Blend
+        default: return;
+    }
+    suppress_param_regen_ = true;
+    auto setBlendParam = [&](const char* pid, double val) {
+        if (auto* p = apvts_.getParameter(pid)) {
+            p->setValueNotifyingHost(p->convertTo0to1(static_cast<float>(val)));
+        }
+    };
+    setBlendParam(ParamIDs::harmonyBlend, h);
+    setBlendParam(ParamIDs::rhythmBlend, r);
+    setBlendParam(ParamIDs::voicingBlend, v);
+    setBlendParam(ParamIDs::melodyBlend, m);
+    suppress_param_regen_ = false;
     scheduleBackgroundRegen(true, true);
 }
 
@@ -600,7 +665,9 @@ void StyleScalerAudioProcessor::regenerateProgression(bool keepLocks, bool newSe
         if (newSeed && !seed_locked_) {
             std::random_device rd;
             seed_ = (static_cast<uint64_t>(rd()) << 32) ^ static_cast<uint64_t>(juce::Time::getMillisecondCounterHiRes());
-            if (seed_ == 0) seed_ = 42ULL;
+            if (seed_ == 0ULL) seed_ = 42ULL;
+        } else if (newSeed && seed_ == 0ULL) {
+            seed_ = 42ULL;
         }
         if (!keepLocks) {
             for (auto& s : progression_) s.locked = false;

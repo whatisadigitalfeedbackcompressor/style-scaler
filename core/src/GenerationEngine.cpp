@@ -204,11 +204,19 @@ std::vector<ProgressionSlot> ProgressionGenerator::generateProgression(
 
     if (!reuseExistingLayout) {
         const double effectivePacing = profile.rhythm.harmonic_pacing * tempoScaleFactor(tempoScale);
+        const bool hasMovingRefProg = [&]() {
+            if (profile.harmony.reference_progression.size() < 2) return false;
+            const auto& first = profile.harmony.reference_progression.front();
+            return std::any_of(profile.harmony.reference_progression.begin(),
+                               profile.harmony.reference_progression.end(),
+                               [&](const std::string& s) { return s != first; });
+        }();
         double slotDur = beatsPerBar;
-        if (effectivePacing <= 0.65 && safeBars >= 2) {
-            slotDur = beatsPerBar * 2.0;
-        } else if (effectivePacing >= 1.65) {
+        if (effectivePacing >= 1.65) {
             slotDur = beatsPerBar * 0.5;
+        } else if (effectivePacing <= 0.65 && safeBars >= 2 &&
+                   !(tempoScale == TempoScale::Normal && hasMovingRefProg)) {
+            slotDur = beatsPerBar * 2.0;
         }
 
         // Preserve any locked slots by bar_index when resizing bar count
@@ -245,13 +253,77 @@ std::vector<ProgressionSlot> ProgressionGenerator::generateProgression(
         return slots;
     }
 
+    auto assignSlotSymbol = [&](ProgressionSlot& dst, const std::string& sym) {
+        dst.roman_symbol = sym;
+        if (const auto* vc = findVocab(profile, sym)) {
+            dst.chord = vc->chord;
+        } else if (auto parsed = parseRomanChord(sym)) {
+            dst.chord = *parsed;
+        } else {
+            dst.roman_symbol = profile.harmony.vocabulary.front().symbol;
+            dst.chord = profile.harmony.vocabulary.front().chord;
+        }
+    };
+
+    // seed == 0 -> Song Original mode: play extracted reference_progression verbatim (or greedy best path)
+    if (seed == 0ULL) {
+        if (!profile.harmony.reference_progression.empty()) {
+            const auto& ref = profile.harmony.reference_progression;
+            for (size_t i = 0; i < slots.size(); ++i) {
+                if (slots[i].locked) continue;
+                assignSlotSymbol(slots[i], ref[i % ref.size()]);
+            }
+            return slots;
+        }
+        const size_t phraseLen = std::min<size_t>(4, slots.size());
+        for (size_t i = 0; i < slots.size(); ++i) {
+            if (slots[i].locked) continue;
+            if (i >= phraseLen && (i % phraseLen) < phraseLen && !slots[i % phraseLen].roman_symbol.empty()) {
+                assignSlotSymbol(slots[i], slots[i % phraseLen].roman_symbol);
+                continue;
+            }
+            if (i == 0) {
+                std::string bestSym = profile.harmony.vocabulary.front().symbol;
+                double bestW = -1.0;
+                for (const auto& v : profile.harmony.vocabulary) {
+                    double w = v.weight * ((v.chord.degree == 1 && v.chord.accidental == 0) ? 2.5 : 1.0);
+                    if (w > bestW) { bestW = w; bestSym = v.symbol; }
+                }
+                assignSlotSymbol(slots[i], bestSym);
+            } else {
+                const auto probs = nextChordProbabilities(profile, slots[i - 1].roman_symbol);
+                std::string chosen = profile.harmony.vocabulary.front().symbol;
+                for (const auto& [sym, _p] : probs) {
+                    chosen = sym;
+                    if (sym != slots[i - 1].roman_symbol || probs.size() == 1) break;
+                }
+                assignSlotSymbol(slots[i], chosen);
+            }
+        }
+        return slots;
+    }
+
     DeterministicRng rng(seed);
+    std::set<std::string> refSet(profile.harmony.reference_progression.begin(),
+                                 profile.harmony.reference_progression.end());
+    const size_t phraseLen = std::min<size_t>(4, slots.size());
 
     for (size_t i = 0; i < slots.size(); ++i) {
         if (slots[i].locked) continue;
 
+        const size_t posInPhrase = (phraseLen > 0) ? (i % phraseLen) : 0;
+        const bool nextIsLocked = (i + 1 < slots.size() && slots[i + 1].locked);
+
+        // A - A' harmonic form across 8/16-bar timelines
+        if (i >= phraseLen && posInPhrase < std::max<size_t>(1, phraseLen / 2) &&
+            !nextIsLocked && !slots[posInPhrase].roman_symbol.empty() && rng.nextDouble() < 0.65) {
+            assignSlotSymbol(slots[i], slots[posInPhrase].roman_symbol);
+            continue;
+        }
+
         const bool isFirst = (i == 0);
         const bool isPhraseEnd = (i + 1 == slots.size()) ||
+                                 (phraseLen > 0 && ((i + 1) % phraseLen == 0)) ||
                                  (static_cast<int>((slots[i].start_beat + slots[i].duration_beats) / beatsPerBar) % 4 == 0 &&
                                   slots[i].duration_beats >= beatsPerBar * 0.5);
 
@@ -263,7 +335,11 @@ std::vector<ProgressionSlot> ProgressionGenerator::generateProgression(
                 candidates.push_back(v.symbol);
                 double w = std::max(0.01, v.weight);
                 if (v.chord.degree == 1 && v.chord.accidental == 0) {
-                    w *= 2.5; // anchor bar 1 strongly on tonic
+                    w *= 6.0; // anchor bar 1 strongly on tonic
+                }
+                if (!profile.harmony.reference_progression.empty() &&
+                    v.symbol == profile.harmony.reference_progression.front()) {
+                    w *= 2.2;
                 }
                 weights.push_back(w);
             }
@@ -271,12 +347,22 @@ std::vector<ProgressionSlot> ProgressionGenerator::generateProgression(
             const auto probs = nextChordProbabilities(profile, slots[i - 1].roman_symbol);
             for (const auto& [sym, p] : probs) {
                 double w = p;
+                if (sym == slots[i - 1].roman_symbol && probs.size() > 1) {
+                    w *= 0.15;
+                }
+                if (!refSet.empty() && refSet.count(sym)) {
+                    w *= 1.35;
+                }
                 if (const auto* vc = findVocab(profile, sym)) {
                     if (isPhraseEnd) {
-                        w *= (1.0 + 2.5 * vc->cadence_weight);
+                        w *= (1.0 + 2.0 * std::clamp(vc->cadence_weight, 0.0, 1.0));
+                        if (vc->chord.degree == 5 || vc->chord.degree == 4 ||
+                            (vc->chord.degree == 7 && vc->chord.accidental == -1)) {
+                            w *= 1.35;
+                        }
                     }
                     // Look ahead if the very next slot is locked so we voice-lead harmonically into it
-                    if (i + 1 < slots.size() && slots[i + 1].locked) {
+                    if (nextIsLocked) {
                         const auto nextProbs = nextChordProbabilities(profile, sym);
                         double linkBoost = 0.05;
                         for (const auto& [ns, np] : nextProbs) {
@@ -300,13 +386,7 @@ std::vector<ProgressionSlot> ProgressionGenerator::generateProgression(
         }
 
         const size_t picked = sampleWeightedIndex(weights, rng);
-        const std::string& chosenSym = candidates[picked];
-        slots[i].roman_symbol = chosenSym;
-        if (const auto* vc = findVocab(profile, chosenSym)) {
-            slots[i].chord = vc->chord;
-        } else if (auto parsed = parseRomanChord(chosenSym)) {
-            slots[i].chord = *parsed;
-        }
+        assignSlotSymbol(slots[i], candidates[picked]);
     }
 
     return slots;
@@ -389,7 +469,7 @@ std::vector<int> VoicingEngine::voiceChord(
     const int floorMidi = std::clamp(voicing.sub_bass_clearance_midi, 24, 72);
     const int targetCenter = std::clamp(voicing.center_pitch + octaveShift * 12, floorMidi + 4, 96);
     const double targetSpread = (spreadOverride >= 0.0)
-                                    ? (6.0 + std::clamp(spreadOverride, 0.0, 1.0) * 20.0)
+                                    ? std::clamp(voicing.spread_semitones + (std::clamp(spreadOverride, 0.0, 1.0) - 0.5) * 18.0, 5.0, 30.0)
                                     : voicing.spread_semitones;
 
     const int nTones = static_cast<int>(pcs.size());
@@ -614,14 +694,44 @@ GeneratedPattern PatternGenerator::generatePattern(
         return progression.size() - 1;
     };
 
+    auto hasNonZeroPat = [](const std::array<double, 16>& p) {
+        for (double v : p) {
+            if (v > 1e-6) return true;
+        }
+        return false;
+    };
+
+    const bool isOriginalMode = (seed == 0ULL);
+
+    // Precompute anticipation shifts so previous slot's chords truncate cleanly before anticipated downbeats
+    std::vector<double> slotAnticipationShift(progression.size(), 0.0);
+    if (perform.groove_sync && !isOriginalMode) {
+        for (size_t s = 1; s < progression.size(); ++s) {
+            if (perform.section == SongSection::Outro && s + 1 == progression.size()) continue;
+            if (profile.rhythm.anticipation > 0.15 && rng.nextDouble() < profile.rhythm.anticipation * 0.75) {
+                const double maxPull = std::min(stepBeats * 2.0, progression[s].duration_beats * 0.35);
+                slotAnticipationShift[s] = -std::min(maxPull, progression[s].start_beat * 0.5);
+            }
+        }
+    }
+
     // --- 1. Channel 1: Chords ---
     if (perform.enable_chords) {
+        const bool useCrispChordPat = hasNonZeroPat(profile.rhythm.chord_pattern);
+        const auto& chordGrid = useCrispChordPat ? profile.rhythm.chord_pattern : profile.rhythm.chord_onset_grid;
+
         for (size_t s = 0; s < progression.size(); ++s) {
             const auto& slot = progression[s];
             const auto& notes = slotVoicings[s];
             if (notes.empty()) continue;
 
             const bool isLastSlot = (s + 1 == progression.size());
+            const double effectiveStart = std::max(0.0, slot.start_beat + slotAnticipationShift[s]);
+            const double slotEnd = (!isLastSlot)
+                                       ? std::max(effectiveStart + 0.12, progression[s + 1].start_beat + slotAnticipationShift[s + 1])
+                                       : totalBeats;
+            const double effectiveSlotDur = std::max(0.12, slotEnd - effectiveStart);
+
             const double introGain = (perform.section == SongSection::Intro)
                                          ? (0.76 + 0.24 * (slot.start_beat / std::max(1.0, totalBeats)))
                                          : 1.0;
@@ -629,14 +739,14 @@ GeneratedPattern PatternGenerator::generatePattern(
             if (!perform.groove_sync || (perform.section == SongSection::Outro && isLastSlot)) {
                 const double sustainMult = (perform.section == SongSection::Outro && isLastSlot)
                                                ? 0.96
-                                               : std::clamp(profile.rhythm.sustain_ratio, 0.35, 0.98);
-                const double dur = std::max(0.25, slot.duration_beats * sustainMult);
+                                               : std::clamp(profile.rhythm.sustain_ratio, 0.45, 0.98);
+                const double dur = std::clamp(effectiveSlotDur * sustainMult, 0.12, std::max(0.12, effectiveSlotDur - 0.01));
                 for (size_t v = 0; v < notes.size(); ++v) {
                     const double strum = static_cast<double>(v) * 0.012 * humanize;
                     const int vel = std::clamp(static_cast<int>(std::llround((92.0 + rng.nextRange(-8.0, 8.0) * humanize) * introGain)), 40, 120);
                     NoteEvent ev;
-                    ev.onset_beats = std::min(totalBeats - 0.05, slot.start_beat + strum);
-                    ev.duration_beats = std::min(dur, totalBeats - ev.onset_beats);
+                    ev.onset_beats = std::min(slotEnd - 0.05, effectiveStart + strum);
+                    ev.duration_beats = std::max(0.06, std::min(dur, slotEnd - ev.onset_beats - 0.005));
                     ev.pitch = notes[v];
                     ev.velocity = vel;
                     ev.channel = 1;
@@ -645,47 +755,51 @@ GeneratedPattern PatternGenerator::generatePattern(
                 continue;
             }
 
-            // Groove-synced chord triggers over the slot's duration using 16-step grid scaled by tempoScale
             std::vector<std::pair<double, int>> onsets; // (beat, stepIdx16)
             const int nSteps = std::max(1, static_cast<int>(std::floor(slot.duration_beats / stepBeats + 1e-6)));
 
-            // Optional anticipation push for slots after slot 0
-            double firstOffsetShift = 0.0;
-            if (s > 0 && profile.rhythm.anticipation > 0.15 && rng.nextDouble() < profile.rhythm.anticipation * 0.75) {
-                firstOffsetShift = -std::min(stepBeats * 2.0, slot.start_beat * 0.5);
-            }
-
             for (int k = 0; k < nSteps; ++k) {
-                const double rawBeat = slot.start_beat + static_cast<double>(k) * stepBeats;
-                // Map beat position to 16-step bar cycle taking tempo scale into account
+                const double rawBeat = (k == 0) ? effectiveStart : (slot.start_beat + static_cast<double>(k) * stepBeats);
+                if (rawBeat >= slotEnd - 0.06) break;
                 const double scaledBeat = rawBeat * scale;
                 const int step16 = static_cast<int>(std::llround(std::fmod(scaledBeat, beatsPerBar) / 0.25)) % 16;
-                const double gridProb = profile.rhythm.chord_onset_grid[static_cast<size_t>(step16)];
+                const double gridProb = chordGrid[static_cast<size_t>(step16)];
 
                 bool trigger = false;
                 if (k == 0) {
                     trigger = true; // guarantee harmonic anchor on chord change
-                } else {
-                    const double threshold = 0.55 - 0.30 * profile.rhythm.syncopation;
-                    if (gridProb >= threshold && rng.nextDouble() < std::clamp(gridProb + 0.15, 0.0, 0.98)) {
+                } else if (useCrispChordPat) {
+                    if (isOriginalMode) {
+                        trigger = (gridProb >= 0.45);
+                    } else if (gridProb >= 0.72) {
                         trigger = true;
+                    } else if (gridProb >= 0.28 && rng.nextDouble() < gridProb) {
+                        trigger = true;
+                    }
+                } else {
+                    if (isOriginalMode) {
+                        trigger = (gridProb >= 0.62);
+                    } else {
+                        const double threshold = 0.55 - 0.30 * profile.rhythm.syncopation;
+                        if (gridProb >= threshold && rng.nextDouble() < std::clamp(gridProb + 0.15, 0.0, 0.98)) {
+                            trigger = true;
+                        }
                     }
                 }
                 if (trigger) {
-                    const double b = (k == 0) ? std::max(0.0, rawBeat + firstOffsetShift) : rawBeat;
-                    onsets.emplace_back(b, step16);
+                    onsets.emplace_back(rawBeat, step16);
                 }
             }
 
-            const double slotEnd = slot.start_beat + slot.duration_beats;
             for (size_t idx = 0; idx < onsets.size(); ++idx) {
                 const double rawOnset = onsets[idx].first;
                 const int step16 = onsets[idx].second;
                 const double nextOnset = (idx + 1 < onsets.size()) ? onsets[idx + 1].first : slotEnd;
                 const double maxAvail = std::max(0.10, nextOnset - rawOnset);
-                const double dur = std::clamp(maxAvail * profile.rhythm.sustain_ratio, 0.10, maxAvail * 0.96);
+                const double sustainMult = std::clamp(profile.rhythm.sustain_ratio, 0.42, 0.96);
+                const double dur = std::clamp(maxAvail * sustainMult, 0.08, maxAvail * 0.95);
 
-                const double onset = applySwingAndHumanize(rawOnset, step16);
+                const double onset = std::min(nextOnset - 0.04, applySwingAndHumanize(rawOnset, step16));
                 const int baseVel = static_cast<int>(std::llround(((step16 % 4 == 0) ? 98.0 : 84.0) *
                                     ((perform.section == SongSection::Intro)
                                          ? (0.76 + 0.24 * (rawOnset / std::max(1.0, totalBeats)))
@@ -694,8 +808,8 @@ GeneratedPattern PatternGenerator::generatePattern(
                     const double strum = static_cast<double>(v) * 0.01 * humanize;
                     const int vel = std::clamp(static_cast<int>(std::llround(baseVel + rng.nextRange(-9.0, 9.0) * humanize)), 35, 124);
                     NoteEvent ev;
-                    ev.onset_beats = std::min(totalBeats - 0.04, onset + strum);
-                    ev.duration_beats = std::max(0.06, std::min(dur, totalBeats - ev.onset_beats));
+                    ev.onset_beats = std::min(nextOnset - 0.03, onset + strum);
+                    ev.duration_beats = std::max(0.06, std::min(dur, nextOnset - ev.onset_beats - 0.005));
                     ev.pitch = notes[v];
                     ev.velocity = vel;
                     ev.channel = 1;
@@ -708,143 +822,262 @@ GeneratedPattern PatternGenerator::generatePattern(
     // --- 2. Channel 2: Melody ---
     if (perform.enable_melody) {
         const auto scaleIvs = scaleIntervals(profile.harmony.mode);
-        const int melLo = std::max(profile.melody.register_low, profile.voicing.sub_bass_clearance_midi + 7);
+
+        int avgChordTop = profile.voicing.center_pitch + 6;
+        if (!slotVoicings.empty()) {
+            int sumTop = 0, cntTop = 0;
+            for (const auto& sv : slotVoicings) {
+                if (!sv.empty()) { sumTop += sv.back(); ++cntTop; }
+            }
+            if (cntTop > 0) avgChordTop = sumTop / cntTop;
+        }
+        const int minMelLo = std::max(profile.melody.register_low, profile.voicing.sub_bass_clearance_midi + 7);
+        const int clearAboveChords = std::min(avgChordTop - 1, profile.voicing.sub_bass_clearance_midi + 18);
+        const int melLo = std::clamp(std::max(minMelLo, clearAboveChords), minMelLo, 84);
         const int melHi = std::max(melLo + 12, profile.melody.register_high);
 
-        // Density combines profile motif_density and perform.melody_density
-        const double densityFactor = std::clamp(0.35 + 1.15 * (0.5 * profile.melody.motif_density + 0.5 * perform.melody_density), 0.15, 1.4);
-
-        // Build A-A'-B-Cadence 16-step motif patterns
-        const int motifSteps = 16;
-        std::vector<bool> motifMaskA(motifSteps, false);
-        std::vector<bool> motifMaskB(motifSteps, false);
-        std::vector<int> motifStepsSigned(motifSteps, 0);
-        std::vector<double> hw(profile.melody.interval_histogram.begin(), profile.melody.interval_histogram.end());
-        for (int k = 0; k < motifSteps; ++k) {
-            const double p = profile.rhythm.melody_onset_grid[static_cast<size_t>(k)] * densityFactor;
-            if ((k == 0 && rng.nextDouble() < 0.75) || rng.nextDouble() < std::clamp(p * 0.72, 0.0, 0.92)) {
-                motifMaskA[static_cast<size_t>(k)] = true;
-            }
-            if ((k == 0 && rng.nextDouble() < 0.80) || rng.nextDouble() < std::clamp(p * 0.78, 0.0, 0.92)) {
-                motifMaskB[static_cast<size_t>(k)] = true;
-            }
-            const int rawInterval = static_cast<int>(sampleWeightedIndex(hw, rng)) - 12;
-            motifStepsSigned[static_cast<size_t>(k)] = rawInterval;
-        }
-
-        // Build full timeline of melody onset times with breathing space at bar 2 / bar 4 endings
-        const int totalSteps = std::max(1, static_cast<int>(std::floor(totalBeats / stepBeats + 1e-6)));
-        std::vector<std::pair<double, int>> melOnsets; // (beat, stepGlobal)
-        for (int g = 0; g < totalSteps; ++g) {
-            const double beat = static_cast<double>(g) * stepBeats;
-            const int barIdx = static_cast<int>(beat / beatsPerBar);
-            const int motifIdx = g % motifSteps;
-            const int phraseBar = barIdx % 4;
-            const double beatIn2BarPhrase = std::fmod(beat, 2.0 * beatsPerBar);
-
-            // Automatic breathing space at the end of bar 2 and bar 4
-            if (beatIn2BarPhrase >= (2.0 * beatsPerBar - 0.75) && (g % 4 != 0) && rng.nextDouble() < 0.72) {
-                continue;
-            }
-            if (perform.section == SongSection::Outro && beat >= totalBeats - beatsPerBar && (g % 4 != 0)) {
-                continue;
+        auto buildChordCompatiblePcs = [&](const RomanChord& chord,
+                                           std::vector<int>& outChordPcs,
+                                           std::vector<int>& outSafeScalePcs,
+                                           std::vector<int>& outTensionPcs) {
+            outChordPcs = chordPitchClasses(chord, profile.harmony.tonic_pc, profile.harmony.mode);
+            const int rootPc = romanChordRootPitchClass(chord, profile.harmony.tonic_pc);
+            const auto civs = chordIntervals(chord.quality);
+            std::vector<int> sensitivePcs = {rootPc};
+            for (size_t k = 1; k < civs.size(); ++k) {
+                if (civs[k] == 3 || civs[k] == 4 || civs[k] == 10 || civs[k] == 11) {
+                    sensitivePcs.push_back(normalizePitchClass(rootPc + civs[k]));
+                }
             }
 
-            bool fire = false;
-            if (phraseBar == 0) {
-                fire = motifMaskA[static_cast<size_t>(motifIdx)];
-            } else if (phraseBar == 1) {
-                const bool reuseMotif = rng.nextDouble() < profile.melody.motif_repetition;
-                fire = reuseMotif
-                           ? motifMaskA[static_cast<size_t>(motifIdx)]
-                           : (rng.nextDouble() < std::clamp(profile.rhythm.melody_onset_grid[static_cast<size_t>(motifIdx)] * densityFactor * 0.70, 0.0, 0.90));
-            } else if (phraseBar == 2) {
-                fire = motifMaskB[static_cast<size_t>(motifIdx)];
-            } else {
-                const bool reuseMotif = rng.nextDouble() < profile.melody.motif_repetition * 0.75;
-                fire = reuseMotif
-                           ? motifMaskA[static_cast<size_t>(motifIdx)]
-                           : (rng.nextDouble() < std::clamp(profile.rhythm.melody_onset_grid[static_cast<size_t>(motifIdx)] * densityFactor * 0.65, 0.0, 0.85));
+            outSafeScalePcs = outChordPcs;
+            outTensionPcs.clear();
+            for (int iv : scaleIvs) {
+                const int pc = normalizePitchClass(profile.harmony.tonic_pc + iv);
+                if (std::find(outChordPcs.begin(), outChordPcs.end(), pc) != outChordPcs.end()) continue;
+                bool avoid = false;
+                for (int spc : sensitivePcs) {
+                    const int d = normalizePitchClass(pc - spc);
+                    if (d == 1 || d == 11) {
+                        avoid = true;
+                        break;
+                    }
+                }
+                if (!avoid) {
+                    outSafeScalePcs.push_back(pc);
+                    outTensionPcs.push_back(pc);
+                }
             }
-            if (fire) {
-                melOnsets.emplace_back(beat, g);
+            if (outSafeScalePcs.empty()) outSafeScalePcs = outChordPcs;
+            if (outTensionPcs.empty()) outTensionPcs = outSafeScalePcs;
+        };
+
+        std::vector<int> scaleMidiNotes;
+        for (int p = melLo; p <= melHi; ++p) {
+            const int rel = normalizePitchClass(p - profile.harmony.tonic_pc);
+            if (std::find(scaleIvs.begin(), scaleIvs.end(), rel) != scaleIvs.end()) {
+                scaleMidiNotes.push_back(p);
             }
         }
+        if (scaleMidiNotes.empty()) scaleMidiNotes.push_back((melLo + melHi) / 2);
+        const int anchorScaleIdx = static_cast<int>(scaleMidiNotes.size()) / 2;
 
-        const int centerPitch = (melLo + melHi) / 2;
-        const int halfSpan = std::max(4, (melHi - melLo) / 3);
-        int prevPitch = std::clamp(centerPitch, melLo, melHi);
+        struct PlannedMelNote {
+            double beat = 0.0;
+            int step16 = 0;
+            int degOffset = 0;
+            double durSteps = 2.0;
+            bool wantChordTone = true;
+            bool isCadence = false;
+        };
+        std::vector<PlannedMelNote> planned;
 
-        for (size_t i = 0; i < melOnsets.size(); ++i) {
-            const double rawBeat = melOnsets[i].first;
-            const int stepGlobal = melOnsets[i].second;
-            const int step16 = stepGlobal % 16;
-            const size_t slotIdx = findSlotAtBeat(rawBeat);
+        const double cycleBeats = 32.0 * stepBeats;
+        const int numCycles = std::max(1, static_cast<int>(std::ceil((totalBeats - 1e-4) / std::max(0.25, cycleBeats))));
+
+        if (!profile.melody.reference_motif.empty()) {
+            for (int c = 0; c < numCycles; ++c) {
+                const double cStart = static_cast<double>(c) * cycleBeats;
+                const bool isVarCycle = (!isOriginalMode && (c % 2 == 1));
+                const int phraseTranspose = (!isOriginalMode && (c % 2 == 1)) ? (rng.nextDouble() < 0.5 ? 1 : -1) : 0;
+
+                for (size_t k = 0; k < profile.melody.reference_motif.size(); ++k) {
+                    const auto& ms = profile.melody.reference_motif[k];
+                    const double beat = cStart + static_cast<double>(ms.step16) * stepBeats;
+                    if (beat >= totalBeats - 0.08) break;
+                    if (perform.section == SongSection::Outro && beat >= totalBeats - beatsPerBar && ms.step16 >= 16) {
+                        continue;
+                    }
+                    if (!isOriginalMode) {
+                        if (perform.melody_density < 0.40 && (ms.step16 % 4 != 0) &&
+                            rng.nextDouble() < (0.40 - perform.melody_density) * 1.4) {
+                            continue;
+                        }
+                    }
+
+                    int degOff = ms.scale_degree_offset + phraseTranspose;
+                    if (isVarCycle && k > 0 && rng.nextDouble() < 0.30) {
+                        degOff += (rng.nextDouble() < 0.5) ? 1 : -1;
+                    }
+                    const bool isLastInCycle = (k + 1 == profile.melody.reference_motif.size());
+                    const bool isCad = isLastInCycle && ((c + 1) % 2 == 0 || c + 1 == numCycles);
+                    planned.push_back(PlannedMelNote{
+                        beat,
+                        ms.step16 % 16,
+                        degOff,
+                        ms.duration_steps,
+                        ms.is_chord_tone || isCad || (ms.step16 % 4 == 0),
+                        isCad
+                    });
+                }
+            }
+        } else {
+            // Structured 2-bar Motif A synthesis when no reference_motif is present (starter presets)
+            const bool useCrispMelPat = hasNonZeroPat(profile.rhythm.melody_pattern);
+            const auto& melGrid = useCrispMelPat ? profile.rhythm.melody_pattern : profile.rhythm.melody_onset_grid;
+            const double densityFactor = std::clamp(0.35 + 1.15 * (0.5 * profile.melody.motif_density + 0.5 * perform.melody_density), 0.15, 1.4);
+
+            std::vector<double> hw(profile.melody.interval_histogram.begin(), profile.melody.interval_histogram.end());
+            auto buildMotifSteps = [&](bool allowVar) {
+                std::vector<MelodyMotifStep> motif;
+                int curDeg = 0;
+                int lastStepDeg = 0;
+                for (int s32 = 0; s32 < 32; ++s32) {
+                    if (s32 >= 28 && (s32 % 4 != 0)) continue; // phrase breath at bar 2 end
+                    const double gridP = melGrid[static_cast<size_t>(s32 % 16)] * densityFactor;
+                    bool fire = false;
+                    if (s32 == 0) {
+                        fire = true;
+                    } else if (isOriginalMode && !allowVar) {
+                        fire = (gridP >= 0.52);
+                    } else {
+                        fire = (rng.nextDouble() < std::clamp(gridP * 0.65, 0.0, 0.88));
+                    }
+                    if (!fire) continue;
+
+                    int stepDeg = 0;
+                    if (!motif.empty()) {
+                        if (std::abs(lastStepDeg) >= 3) {
+                            stepDeg = (lastStepDeg > 0) ? -1 : 1; // contrary recovery after leap
+                        } else if (isOriginalMode && !allowVar) {
+                            stepDeg = ((s32 / 4) % 2 == 0) ? 1 : -1;
+                        } else {
+                            const int rawSemi = static_cast<int>(sampleWeightedIndex(hw, rng)) - 12;
+                            stepDeg = std::clamp(static_cast<int>(std::llround(static_cast<double>(rawSemi) / 1.75)), -4, 4);
+                        }
+                        const double archTarget = (profile.melody.arch_contour - 0.45) * 6.0 *
+                                                  std::sin(3.14159265358979323846 * (static_cast<double>(s32) / 31.0));
+                        curDeg = std::clamp(static_cast<int>(std::llround(0.70 * (curDeg + stepDeg) + 0.30 * archTarget)), -6, 6);
+                        lastStepDeg = curDeg - motif.back().scale_degree_offset;
+                    }
+                    const bool isCt = (s32 % 4 == 0) || (rng.nextDouble() < profile.melody.chord_tone_ratio);
+                    motif.push_back(MelodyMotifStep{s32, curDeg, 2.0, isCt});
+                    if (motif.size() >= 10) break;
+                }
+                for (size_t k = 0; k < motif.size(); ++k) {
+                    const int nextS = (k + 1 < motif.size()) ? motif[k + 1].step16 : 32;
+                    motif[k].duration_steps = std::clamp(static_cast<double>(nextS - motif[k].step16), 1.0, 6.0);
+                }
+                return motif;
+            };
+
+            const auto motifA = buildMotifSteps(false);
+            const auto motifB = isOriginalMode ? motifA : buildMotifSteps(true);
+
+            for (int c = 0; c < numCycles; ++c) {
+                const double cStart = static_cast<double>(c) * cycleBeats;
+                const bool useA = (c % 2 == 0) || (rng.nextDouble() < profile.melody.motif_repetition);
+                const auto& srcMotif = useA ? motifA : motifB;
+                for (size_t k = 0; k < srcMotif.size(); ++k) {
+                    const auto& ms = srcMotif[k];
+                    const double beat = cStart + static_cast<double>(ms.step16) * stepBeats;
+                    if (beat >= totalBeats - 0.08) break;
+                    if (perform.section == SongSection::Outro && beat >= totalBeats - beatsPerBar && ms.step16 >= 16) {
+                        continue;
+                    }
+                    const bool isCad = (k + 1 == srcMotif.size()) && ((c + 1) % 2 == 0 || c + 1 == numCycles);
+                    planned.push_back(PlannedMelNote{
+                        beat,
+                        ms.step16 % 16,
+                        ms.scale_degree_offset,
+                        ms.duration_steps,
+                        ms.is_chord_tone || isCad,
+                        isCad
+                    });
+                }
+            }
+        }
+
+        int prevPitch = std::clamp(scaleMidiNotes[static_cast<size_t>(anchorScaleIdx)], melLo, melHi);
+        bool prevWasNonChord = false;
+
+        for (size_t i = 0; i < planned.size(); ++i) {
+            const auto& pm = planned[i];
+            const size_t slotIdx = findSlotAtBeat(pm.beat);
             const auto& slot = progression[slotIdx];
-            const auto cpcs = chordPitchClasses(slot.chord, profile.harmony.tonic_pc, profile.harmony.mode);
 
-            const double phraseBarPos = std::fmod(rawBeat / beatsPerBar, 4.0) / 4.0;
-            const bool isCadenceNote = (phraseBarPos >= 0.75) || (i + 1 == melOnsets.size());
+            std::vector<int> chordPcs, safeScalePcs, tensionPcs;
+            buildChordCompatiblePcs(slot.chord, chordPcs, safeScalePcs, tensionPcs);
 
-            // Determine candidate pitches inside [melLo, melHi]
+            const int targetIdx = std::clamp(anchorScaleIdx + pm.degOffset, 0, static_cast<int>(scaleMidiNotes.size()) - 1);
+            const int targetPitch = scaleMidiNotes[static_cast<size_t>(targetIdx)];
+
+            const bool forceChordResolve = prevWasNonChord || pm.isCadence;
+            const std::vector<int>* pool = &chordPcs;
+            if (!forceChordResolve && !pm.wantChordTone) {
+                const double nonCtRatio = std::max(0.05, 1.0 - profile.melody.chord_tone_ratio);
+                const double tensProb = std::clamp(profile.melody.tension_tone_ratio / nonCtRatio, 0.0, 1.0);
+                pool = (!isOriginalMode && rng.nextDouble() < tensProb) ? &tensionPcs : &safeScalePcs;
+            }
+
             std::vector<int> allowedPitches;
-            const bool isStrongBeat = (stepGlobal % 4 == 0);
-            const double targetChordToneP = isCadenceNote
-                                                ? 0.94
-                                                : (isStrongBeat
-                                                       ? std::clamp(profile.melody.chord_tone_ratio + 0.15, 0.0, 0.98)
-                                                       : profile.melody.chord_tone_ratio);
-            const bool pickChordTone = rng.nextDouble() < targetChordToneP;
-
-            if (pickChordTone && !cpcs.empty()) {
-                for (int p = melLo; p <= melHi; ++p) {
-                    if (std::find(cpcs.begin(), cpcs.end(), normalizePitchClass(p)) != cpcs.end()) {
-                        allowedPitches.push_back(p);
-                    }
-                }
-            } else {
-                for (int p = melLo; p <= melHi; ++p) {
-                    const int rel = normalizePitchClass(p - profile.harmony.tonic_pc);
-                    if (std::find(scaleIvs.begin(), scaleIvs.end(), rel) != scaleIvs.end()) {
-                        allowedPitches.push_back(p);
-                    }
+            for (int p = melLo; p <= melHi; ++p) {
+                if (std::find(pool->begin(), pool->end(), normalizePitchClass(p)) != pool->end()) {
+                    allowedPitches.push_back(p);
                 }
             }
-
             if (allowedPitches.empty()) {
-                allowedPitches.push_back(prevPitch);
+                for (int p = melLo; p <= melHi; ++p) {
+                    if (std::find(safeScalePcs.begin(), safeScalePcs.end(), normalizePitchClass(p)) != safeScalePcs.end()) {
+                        allowedPitches.push_back(p);
+                    }
+                }
             }
+            if (allowedPitches.empty()) allowedPitches.push_back(prevPitch);
 
-            // Position-aware 4-bar phrase arch target with mean reversion (zero linear drift)
-            const double archShape = std::sin(3.14159265358979323846 * phraseBarPos);
-            const double archShift = (profile.melody.arch_contour - 0.35) * 2.0 * archShape * static_cast<double>(halfSpan);
-            const int archTarget = std::clamp(static_cast<int>(std::llround(centerPitch + archShift)), melLo + 2, melHi - 2);
-
-            const int motifDelta = motifStepsSigned[static_cast<size_t>(step16)];
-            const int desiredPitch = std::clamp(
-                static_cast<int>(std::llround(0.62 * static_cast<double>(prevPitch + motifDelta) + 0.38 * static_cast<double>(archTarget))),
-                melLo, melHi);
-
+            const int refPitch = prevWasNonChord ? prevPitch : targetPitch;
             int chosen = allowedPitches.front();
-            int bestDist = 999;
+            double bestScore = 1e9;
             for (int p : allowedPitches) {
-                const int d = std::abs(p - desiredPitch);
-                if (d < bestDist || (d == bestDist && rng.nextDouble() < 0.4)) {
-                    bestDist = d;
+                double dist = static_cast<double>(std::abs(p - refPitch));
+                if (!prevWasNonChord) {
+                    dist += 0.25 * static_cast<double>(std::abs(p - prevPitch));
+                }
+                if (p == melLo || p == melHi) dist += 1.5; // discourage edge pinning
+                if (dist < bestScore) {
+                    bestScore = dist;
                     chosen = p;
                 }
             }
 
-            const double nextBeat = (i + 1 < melOnsets.size()) ? melOnsets[i + 1].first : totalBeats;
-            const double gap = std::max(0.10, nextBeat - rawBeat);
-            const double dur = std::clamp(gap * profile.melody.legato_ratio, 0.08, std::min(gap * 0.95, 2.0));
-            const double onset = applySwingAndHumanize(rawBeat, step16);
+            const int chosenPc = normalizePitchClass(chosen);
+            prevWasNonChord = (std::find(chordPcs.begin(), chordPcs.end(), chosenPc) == chordPcs.end());
+
+            const double nextBeat = (i + 1 < planned.size()) ? planned[i + 1].beat : totalBeats;
+            const double gap = std::max(0.10, nextBeat - pm.beat);
+            const double desiredDur = pm.durSteps * stepBeats * std::clamp(profile.melody.legato_ratio, 0.40, 1.05);
+            const double dur = std::clamp(desiredDur, 0.08, std::min(gap * 0.95, 2.5));
+            const double onset = isOriginalMode ? std::clamp(pm.beat, 0.0, totalBeats - 0.03)
+                                                : applySwingAndHumanize(pm.beat, pm.step16);
 
             const double introGain = (perform.section == SongSection::Intro)
-                                         ? (0.74 + 0.26 * (rawBeat / std::max(1.0, totalBeats)))
+                                         ? (0.74 + 0.26 * (pm.beat / std::max(1.0, totalBeats)))
                                          : 1.0;
+            const bool isStrongBeat = (pm.step16 % 4 == 0);
             const int baseVel = static_cast<int>(std::llround((isStrongBeat ? 96.0 : 82.0) * introGain));
-            const int vel = std::clamp(static_cast<int>(std::llround(baseVel + rng.nextRange(-10.0, 10.0) * humanize)), 40, 125);
+            const int vel = isOriginalMode
+                                ? std::clamp(baseVel, 40, 125)
+                                : std::clamp(static_cast<int>(std::llround(baseVel + rng.nextRange(-10.0, 10.0) * humanize)), 40, 125);
 
             NoteEvent ev;
             ev.onset_beats = onset;
@@ -871,39 +1104,69 @@ GeneratedPattern PatternGenerator::generatePattern(
             return std::clamp(p, bassLo, bassHi);
         };
 
+        const auto scaleIvs = scaleIntervals(profile.harmony.mode);
+        auto isInScale = [&](int pitch) {
+            const int rel = normalizePitchClass(pitch - profile.harmony.tonic_pc);
+            return std::find(scaleIvs.begin(), scaleIvs.end(), rel) != scaleIvs.end();
+        };
+
+        const bool useCrispBassPat = hasNonZeroPat(profile.rhythm.bass_pattern);
+        const auto& bassGrid = useCrispBassPat ? profile.rhythm.bass_pattern : profile.rhythm.bass_onset_grid;
         const double bassSustainFactor = std::clamp(0.45 + 0.50 * profile.rhythm.sustain_ratio, 0.35, 0.96);
 
         for (size_t s = 0; s < progression.size(); ++s) {
             const auto& slot = progression[s];
+            const bool isLastSlot = (s + 1 == progression.size());
+            const double effectiveStart = std::max(0.0, slot.start_beat + slotAnticipationShift[s]);
+            const double slotEnd = (!isLastSlot)
+                                       ? std::max(effectiveStart + 0.12, progression[s + 1].start_beat + slotAnticipationShift[s + 1])
+                                       : totalBeats;
+
             const int rootPc = romanChordRootPitchClass(slot.chord, profile.harmony.tonic_pc);
             const int bassPc = normalizePitchClass(rootPc + slot.chord.bass_degree_offset);
             const int rootPitch = placeInBassRegister(bassPc);
-            const int fifthPitch = placeInBassRegister(bassPc + 7);
+
+            int fifthIv = 7;
+            if (slot.chord.quality == ChordQuality::Dim ||
+                slot.chord.quality == ChordQuality::HDim7 ||
+                slot.chord.quality == ChordQuality::Dim7) {
+                fifthIv = 6;
+            } else if (slot.chord.quality == ChordQuality::Aug) {
+                fifthIv = 8;
+            }
+            const int fifthPitch = placeInBassRegister(bassPc + fifthIv);
             const int octPitch = (rootPitch + 12 <= bassHi) ? (rootPitch + 12) : rootPitch;
 
             const int nSteps = std::max(1, static_cast<int>(std::floor(slot.duration_beats / stepBeats + 1e-6)));
             std::vector<std::pair<double, int>> bassOnsets;
             for (int k = 0; k < nSteps; ++k) {
-                const double rawBeat = slot.start_beat + static_cast<double>(k) * stepBeats;
-                if (perform.section == SongSection::Outro && s + 1 == progression.size() && k > 0) {
+                const double rawBeat = (k == 0) ? effectiveStart : (slot.start_beat + static_cast<double>(k) * stepBeats);
+                if (rawBeat >= slotEnd - 0.06) break;
+                if (perform.section == SongSection::Outro && isLastSlot && k > 0) {
                     continue;
                 }
                 const double scaledBeat = rawBeat * scale;
                 const int step16 = static_cast<int>(std::llround(std::fmod(scaledBeat, beatsPerBar) / 0.25)) % 16;
-                const double gridP = profile.rhythm.bass_onset_grid[static_cast<size_t>(step16)];
+                const double gridP = bassGrid[static_cast<size_t>(step16)];
 
                 bool trigger = false;
                 if (k == 0) {
                     trigger = true;
-                } else if (perform.groove_sync && gridP >= 0.25 && rng.nextDouble() < gridP * 0.85) {
-                    trigger = true;
+                } else if (perform.groove_sync) {
+                    if (useCrispBassPat) {
+                        if (isOriginalMode) trigger = (gridP >= 0.45);
+                        else if (gridP >= 0.72) trigger = true;
+                        else if (gridP >= 0.25 && rng.nextDouble() < gridP) trigger = true;
+                    } else {
+                        if (isOriginalMode) trigger = (gridP >= 0.55);
+                        else if (gridP >= 0.25 && rng.nextDouble() < gridP * 0.85) trigger = true;
+                    }
                 }
                 if (trigger) {
                     bassOnsets.emplace_back(rawBeat, step16);
                 }
             }
 
-            const double slotEnd = slot.start_beat + slot.duration_beats;
             for (size_t idx = 0; idx < bassOnsets.size(); ++idx) {
                 const double rawBeat = bassOnsets[idx].first;
                 const int step16 = bassOnsets[idx].second;
@@ -912,30 +1175,44 @@ GeneratedPattern PatternGenerator::generatePattern(
                 const double dur = std::clamp(gap * bassSustainFactor, 0.08, gap * 0.96);
 
                 int pitch = rootPitch;
-                if (idx > 0) {
+                if (idx > 0 && !isOriginalMode) {
                     const bool isLastBeforeChange = (idx + 1 == bassOnsets.size()) && (s + 1 < progression.size());
                     if (isLastBeforeChange && rng.nextDouble() < 0.45) {
                         const int nextRootPc = romanChordRootPitchClass(progression[s + 1].chord, profile.harmony.tonic_pc);
                         const int nextBassPc = normalizePitchClass(nextRootPc + progression[s + 1].chord.bass_degree_offset);
                         const int nextRootPitch = placeInBassRegister(nextBassPc);
-                        const int approach = (rng.nextDouble() < 0.5) ? (nextRootPitch - 1) : (nextRootPitch + 2);
-                        pitch = std::clamp(approach, bassLo, bassHi);
+                        std::vector<int> approaches;
+                        for (int delta : {-2, -1, 1, 2}) {
+                            const int cand = nextRootPitch + delta;
+                            if (cand < bassLo || cand > bassHi) continue;
+                            if (isInScale(cand) || (profile.harmony.chromaticism > 0.35 && delta == -1)) {
+                                approaches.push_back(cand);
+                            }
+                        }
+                        if (!approaches.empty()) {
+                            pitch = approaches[static_cast<size_t>(rng.nextInt(0, static_cast<int>(approaches.size() - 1)))];
+                        }
                     } else {
                         const double r = rng.nextDouble();
                         if (r < 0.22) pitch = fifthPitch;
                         else if (r < 0.34) pitch = octPitch;
                     }
+                } else if (idx > 0 && isOriginalMode && idx + 1 == bassOnsets.size() && bassOnsets.size() >= 3) {
+                    pitch = fifthPitch;
                 }
 
-                const double onset = applySwingAndHumanize(rawBeat, step16);
+                const double onset = isOriginalMode ? std::clamp(rawBeat, 0.0, totalBeats - 0.03)
+                                                    : applySwingAndHumanize(rawBeat, step16);
                 const double introGain = (perform.section == SongSection::Intro)
                                              ? (0.78 + 0.22 * (rawBeat / std::max(1.0, totalBeats)))
                                              : 1.0;
-                const int vel = std::clamp(static_cast<int>(std::llround(((idx == 0 ? 108.0 : 92.0) + rng.nextRange(-7.0, 7.0) * humanize) * introGain)), 45, 127);
+                const int vel = isOriginalMode
+                                    ? std::clamp(static_cast<int>(std::llround((idx == 0 ? 108.0 : 92.0) * introGain)), 45, 127)
+                                    : std::clamp(static_cast<int>(std::llround(((idx == 0 ? 108.0 : 92.0) + rng.nextRange(-7.0, 7.0) * humanize) * introGain)), 45, 127);
 
                 NoteEvent ev;
                 ev.onset_beats = onset;
-                ev.duration_beats = std::max(0.06, std::min(dur, totalBeats - onset));
+                ev.duration_beats = std::max(0.06, std::min(dur, nextBeat - onset - 0.005));
                 ev.pitch = pitch;
                 ev.velocity = vel;
                 ev.channel = 3;

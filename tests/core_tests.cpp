@@ -608,3 +608,130 @@ TEST_CASE("Bijective voice leading avoids low-interval mud and 4-bar melody avoi
     }
     CHECK(pinned < static_cast<int>(pat.melody.size()) / 2);
 }
+
+TEST_CASE("Program 52 (MuScriptor Voice) routes to melody, extracts song idioms, and avoids min11 hallucination", "[analyzer][voice][idioms]") {
+    std::vector<TimedNoteSec> notes;
+    // 8 bars at 120 BPM (0.5 s/beat, 2.0 s/bar): clean C major triads + C/F/G/Am bass + pr=52 vocal melody
+    const std::array<std::tuple<int, std::array<int, 3>>, 4> chords = {{
+        {48, {60, 64, 67}}, // I (C)
+        {41, {53, 57, 60}}, // IV (F)
+        {43, {55, 59, 62}}, // V (G)
+        {45, {57, 60, 64}}  // vi (Am)
+    }};
+    const std::array<int, 4> melSeq = {72, 74, 76, 79};
+    for (int bar = 0; bar < 8; ++bar) {
+        const double bSec = static_cast<double>(bar) * 2.0;
+        const auto& [bassP, triad] = chords[static_cast<size_t>(bar % 4)];
+        notes.push_back({bSec, bSec + 1.8, bassP, 100, 33, false});
+        for (int cp : triad) {
+            notes.push_back({bSec, bSec + 1.6, cp, 88, 0, false});
+        }
+        // Vocal melody on GM program 52
+        for (int m = 0; m < 4; ++m) {
+            const double mOn = bSec + static_cast<double>(m) * 0.5;
+            const int pitch = melSeq[static_cast<size_t>((bar + m) % 4)];
+            notes.push_back({mOn, mOn + 0.42, pitch, 96, 52, false});
+        }
+    }
+
+    AnalysisOptions opts;
+    opts.id = "voice_idiom_test";
+    opts.name = "Voice Idiom Test";
+    opts.bpm_hint = 120.0;
+    const StyleProfile prof = MidiStyleAnalyzer::analyzeTimed(notes, opts);
+    REQUIRE(validate(prof).valid);
+
+    // Chords should be clean triads, not bloated min11
+    bool hasMin11 = false;
+    for (const auto& v : prof.harmony.vocabulary) {
+        if (v.chord.quality == ChordQuality::Min11) hasMin11 = true;
+    }
+    CHECK_FALSE(hasMin11);
+    CHECK_FALSE(prof.harmony.reference_progression.empty());
+    CHECK_FALSE(prof.melody.reference_motif.empty());
+    CHECK(prof.rhythm.chord_pattern[0] > 0.5);
+    CHECK(prof.rhythm.sustain_ratio >= 0.45);
+
+    double cwSum = 0.0;
+    for (const auto& v : prof.harmony.vocabulary) cwSum += v.cadence_weight;
+    CHECK(cwSum <= 1.001);
+}
+
+TEST_CASE("Repeated mergeProfiles keeps cadence_weight normalized and transitions non-uniform", "[analyzer][merge][cadence]") {
+    StyleProfile base = makeDefaultStyleProfile();
+    base.harmony.transitions["i7"] = {{"bVImaj7", 0.70}, {"iv7", 0.15}, {"bVII", 0.10}, {"v7", 0.05}, {"i7", 0.0}};
+    normalizeProfileDistributions(base);
+
+    StyleProfile acc = base;
+    for (int k = 0; k < 10; ++k) {
+        StyleProfile next = base;
+        next.processed_tracks = {"track_" + std::to_string(k)};
+        acc = MidiStyleAnalyzer::mergeProfiles(acc, next);
+    }
+    REQUIRE(validate(acc).valid);
+
+    double cwSum = 0.0;
+    for (const auto& v : acc.harmony.vocabulary) {
+        CHECK(v.cadence_weight <= 1.0 + 1e-6);
+        cwSum += v.cadence_weight;
+    }
+    CHECK(cwSum == Approx(1.0).margin(1e-3));
+
+    const auto& row = acc.harmony.transitions.at("i7");
+    CHECK(row.at("bVImaj7") > 0.45);
+    CHECK(row.at("bVImaj7") > row.at("v7") * 3.0);
+}
+
+TEST_CASE("Song Original (seed 0) replays reference_progression and B->A transfers groove cleanly", "[generation][transfer]") {
+    StyleProfile songA = makeDefaultStyleProfile();
+    songA.id = "song_a";
+    songA.name = "Song A";
+    songA.artist = "Artist A";
+    songA.harmony.tonic_pc = 0;
+    songA.harmony.mode = Mode::Major;
+    songA.harmony.vocabulary.clear();
+    for (const auto& sym : std::vector<std::string>{"I", "V", "vi", "IV"}) {
+        auto rc = parseRomanChord(sym);
+        REQUIRE(rc.has_value());
+        songA.harmony.vocabulary.push_back(ChordVocabEntry{sym, *rc, 0.25, sym == "IV" ? 0.5 : 0.1});
+    }
+    songA.harmony.transitions = {
+        {"I",  {{"V", 0.8}, {"vi", 0.1}, {"IV", 0.1}, {"I", 0.0}}},
+        {"V",  {{"vi", 0.8}, {"IV", 0.1}, {"I", 0.1}, {"V", 0.0}}},
+        {"vi", {{"IV", 0.8}, {"I", 0.1}, {"V", 0.1}, {"vi", 0.0}}},
+        {"IV", {{"I", 0.8}, {"V", 0.1}, {"vi", 0.1}, {"IV", 0.0}}}
+    };
+    songA.harmony.reference_progression = {"I", "V", "vi", "IV"};
+    songA.rhythm.chord_pattern = {1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    songA.melody.reference_motif = {
+        {0, 0, 4.0, true}, {4, 1, 4.0, false}, {8, 2, 4.0, true}, {16, 4, 4.0, true}
+    };
+    normalizeProfileDistributions(songA);
+
+    StyleProfile songB = songA;
+    songB.id = "song_b";
+    songB.rhythm.chord_pattern = {1.0, 0.0, 0.0, 0.9, 0.0, 0.0, 0.9, 0.0, 0.0, 0.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0};
+
+    // seed == 0 reproduces reference_progression verbatim
+    const auto origProg = ProgressionGenerator::generateProgression(songA, 4, 0ULL);
+    REQUIRE(origProg.size() == 4);
+    CHECK(origProg[0].roman_symbol == "I");
+    CHECK(origProg[1].roman_symbol == "V");
+    CHECK(origProg[2].roman_symbol == "vi");
+    CHECK(origProg[3].roman_symbol == "IV");
+
+    // B Groove -> A keeps A's harmony and applies B's crisp chord pattern
+    BlendParams bp;
+    bp.harmony = 0.0;
+    bp.rhythm = 1.0;
+    bp.voicing = 0.0;
+    bp.melody = 0.0;
+    const StyleProfile grooveTransferred = StyleBlender::blend(songA, songB, bp);
+    CHECK(grooveTransferred.harmony.reference_progression == songA.harmony.reference_progression);
+    CHECK(grooveTransferred.rhythm.chord_pattern == songB.rhythm.chord_pattern);
+
+    const auto patOrig = PatternGenerator::generatePattern(songA, origProg, PerformParams{}, 0ULL);
+    const auto patGroove = PatternGenerator::generatePattern(grooveTransferred, origProg, PerformParams{}, 0ULL);
+    CHECK(patGroove.chords.size() > patOrig.chords.size());
+    CHECK_FALSE(patOrig.melody.empty());
+}
