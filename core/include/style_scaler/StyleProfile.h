@@ -51,6 +51,8 @@ struct RhythmAxis {
     std::array<double, 16> chord_pattern = {};
     std::array<double, 16> bass_pattern = {};
     std::array<double, 16> melody_pattern = {};
+    std::array<double, 16> chord_pattern_bar2 = {};
+    std::array<double, 16> bass_pattern_bar2 = {};
     double syncopation = 0.35;
     double anticipation = 0.2;
     double swing = 0.0;

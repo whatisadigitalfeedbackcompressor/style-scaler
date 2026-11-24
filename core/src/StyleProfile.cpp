@@ -314,6 +314,8 @@ nlohmann::json rhythmToJson(const RhythmAxis& r) {
     if (hasNonZeroPattern(r.chord_pattern)) j["chord_pattern"] = r.chord_pattern;
     if (hasNonZeroPattern(r.bass_pattern)) j["bass_pattern"] = r.bass_pattern;
     if (hasNonZeroPattern(r.melody_pattern)) j["melody_pattern"] = r.melody_pattern;
+    if (hasNonZeroPattern(r.chord_pattern_bar2)) j["chord_pattern_bar2"] = r.chord_pattern_bar2;
+    if (hasNonZeroPattern(r.bass_pattern_bar2)) j["bass_pattern_bar2"] = r.bass_pattern_bar2;
     return j;
 }
 
@@ -467,6 +469,12 @@ RhythmAxis rhythmFromJson(const nlohmann::json& r, std::vector<std::string>& err
     }
     if (r.contains("melody_pattern")) {
         out.melody_pattern = parseDoubleArray<16>(r["melody_pattern"], "rhythm.melody_pattern", errs);
+    }
+    if (r.contains("chord_pattern_bar2")) {
+        out.chord_pattern_bar2 = parseDoubleArray<16>(r["chord_pattern_bar2"], "rhythm.chord_pattern_bar2", errs);
+    }
+    if (r.contains("bass_pattern_bar2")) {
+        out.bass_pattern_bar2 = parseDoubleArray<16>(r["bass_pattern_bar2"], "rhythm.bass_pattern_bar2", errs);
     }
     out.syncopation = reqNumField(r, "syncopation", 0.35, errs);
     out.anticipation = reqNumField(r, "anticipation", 0.2, errs);
@@ -737,15 +745,30 @@ SectionDNA deriveSectionDNA(const StyleProfile& profile, SongSection section) {
     sec.melody = profile.melody;
     sec.populated = true;
 
+    auto thinPattern = [](std::array<double, 16>& pat, double offbeatScale, double midBeatScale) {
+        for (size_t i = 0; i < 16; ++i) {
+            if (i == 0) continue;
+            pat[i] *= (i == 8) ? midBeatScale : offbeatScale;
+            if (pat[i] < 0.35) pat[i] = 0.0;
+        }
+    };
+
     if (section == SongSection::Intro) {
-        sec.rhythm.harmonic_pacing = std::clamp(sec.rhythm.harmonic_pacing * 0.55, 0.25, 4.0);
-        sec.rhythm.sustain_ratio = std::clamp(sec.rhythm.sustain_ratio * 1.15, 0.2, 1.5);
+        sec.rhythm.harmonic_pacing = std::clamp(sec.rhythm.harmonic_pacing * 0.85, 0.5, 4.0);
+        sec.rhythm.sustain_ratio = std::clamp(std::max(sec.rhythm.sustain_ratio, 0.78) * 1.08, 0.55, 0.96);
         sec.rhythm.syncopation = std::clamp(sec.rhythm.syncopation * 0.65, 0.0, 1.0);
+        thinPattern(sec.rhythm.chord_pattern, 0.25, 0.65);
+        thinPattern(sec.rhythm.chord_pattern_bar2, 0.25, 0.65);
+        thinPattern(sec.rhythm.bass_pattern, 0.20, 0.50);
+        thinPattern(sec.rhythm.bass_pattern_bar2, 0.20, 0.50);
+        thinPattern(sec.rhythm.melody_pattern, 0.45, 0.75);
         for (size_t i = 0; i < 16; ++i) {
             sec.rhythm.bass_onset_grid[i] *= (i % 8 == 0) ? 1.0 : 0.35;
             sec.rhythm.melody_onset_grid[i] *= 0.55;
         }
-        sec.voicing.register_low = std::min(sec.voicing.register_high - 6, sec.voicing.register_low + 4);
+        sec.voicing.register_high = std::max(sec.voicing.register_low + 8,
+                                             std::min(sec.voicing.register_high, sec.melody.register_high - 4));
+        sec.voicing.register_low = std::min(sec.voicing.register_high - 8, sec.voicing.register_low + 4);
         sec.voicing.center_pitch = std::clamp(sec.voicing.center_pitch + 2, sec.voicing.register_low, sec.voicing.register_high);
         sec.voicing.spread_semitones = std::clamp(sec.voicing.spread_semitones * 0.85, 5.0, 30.0);
         sec.melody.motif_density = std::clamp(sec.melody.motif_density * 0.60, 0.1, 1.0);
@@ -756,8 +779,12 @@ SectionDNA deriveSectionDNA(const StyleProfile& profile, SongSection section) {
         }
         normalizeHarmonyAndMelody(sec.harmony, sec.melody);
     } else if (section == SongSection::Outro) {
-        sec.rhythm.sustain_ratio = std::clamp(sec.rhythm.sustain_ratio * 1.20, 0.2, 1.5);
+        sec.rhythm.sustain_ratio = std::clamp(sec.rhythm.sustain_ratio * 1.15, 0.55, 0.96);
         sec.rhythm.syncopation = std::clamp(sec.rhythm.syncopation * 0.75, 0.0, 1.0);
+        thinPattern(sec.rhythm.chord_pattern, 0.45, 0.75);
+        thinPattern(sec.rhythm.chord_pattern_bar2, 0.45, 0.75);
+        thinPattern(sec.rhythm.bass_pattern, 0.45, 0.75);
+        thinPattern(sec.rhythm.bass_pattern_bar2, 0.45, 0.75);
         sec.melody.motif_density = std::clamp(sec.melody.motif_density * 0.70, 0.1, 1.0);
         for (auto& v : sec.harmony.vocabulary) {
             if (v.chord.degree == 1 && v.chord.accidental == 0) {

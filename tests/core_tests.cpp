@@ -735,3 +735,195 @@ TEST_CASE("Song Original (seed 0) replays reference_progression and B->A transfe
     CHECK(patGroove.chords.size() > patOrig.chords.size());
     CHECK_FALSE(patOrig.melody.empty());
 }
+
+TEST_CASE("Intro and Outro preserve harmony/registers and thin arrangement in first/last bars", "[sections][arrangement]") {
+    std::vector<TimedNoteSec> notes;
+    const std::array<std::tuple<int, std::array<int, 3>>, 4> chords = {{
+        {36, {48, 51, 55}}, // i (Cm)
+        {44, {56, 60, 63}}, // bVI (Ab)
+        {41, {53, 56, 60}}, // iv (Fm)
+        {43, {55, 59, 62}}  // V (G)
+    }};
+    for (int bar = 0; bar < 16; ++bar) {
+        const double bSec = static_cast<double>(bar) * 2.0;
+        if (bar < 4) {
+            // Sparse weird intro slice with high percussive chime & single pedal note
+            notes.push_back({bSec, bSec + 1.8, 36, 72, 33, false});
+            notes.push_back({bSec + 0.5, bSec + 0.7, 84, 68, 0, false});
+            continue;
+        }
+        const auto& [bassP, triad] = chords[static_cast<size_t>((bar - 4) % 4)];
+        for (int beat = 0; beat < 4; ++beat) {
+            const double t = bSec + static_cast<double>(beat) * 0.5;
+            notes.push_back({t, t + 0.35, bassP, 102, 33, false});
+            for (int cp : triad) {
+                notes.push_back({t, t + 0.32, cp, 88, 0, false});
+            }
+        }
+        notes.push_back({bSec + 0.25, bSec + 0.65, 72 + ((bar % 3) * 2), 96, 52, false});
+        notes.push_back({bSec + 1.00, bSec + 1.45, 75, 94, 52, false});
+    }
+
+    AnalysisOptions opts;
+    opts.id = "section_conductor_test";
+    opts.name = "Section Conductor";
+    opts.bpm_hint = 120.0;
+    const StyleProfile prof = MidiStyleAnalyzer::analyzeTimed(notes, opts);
+    REQUIRE(validate(prof).valid);
+    REQUIRE(prof.sections.count("intro") == 1);
+    REQUIRE(prof.sections.count("chorus") == 1);
+    REQUIRE(prof.sections.count("outro") == 1);
+
+    const auto& secIntro = prof.sections.at("intro");
+    const auto& secChorus = prof.sections.at("chorus");
+    CHECK(secIntro.populated);
+    CHECK(secIntro.voicing.register_high < secIntro.melody.register_high);
+    CHECK(secChorus.melody.motif_density >= secIntro.melody.motif_density);
+
+    auto runSec = [&](SongSection sec) {
+        BlendParams bp;
+        bp.section = sec;
+        const StyleProfile eff = StyleBlender::blend(prof, prof, bp);
+        const auto prog = ProgressionGenerator::generateProgression(eff, 4, 0ULL);
+        PerformParams perf;
+        perf.section = sec;
+        return PatternGenerator::generatePattern(eff, prog, perf, 0ULL);
+    };
+
+    const auto patIntro = runSec(SongSection::Intro);
+    const auto patChorus = runSec(SongSection::Chorus);
+    const auto patOutro = runSec(SongSection::Outro);
+
+    auto countFirstHalfOnsets = [](const std::vector<NoteEvent>& evs) {
+        std::set<int> ticks;
+        for (const auto& e : evs) {
+            if (e.onset_beats < 8.0 - 1e-4) {
+                ticks.insert(static_cast<int>(std::llround(e.onset_beats * 4.0)));
+            }
+        }
+        return ticks.size();
+    };
+    CHECK(countFirstHalfOnsets(patIntro.chords) <= countFirstHalfOnsets(patChorus.chords));
+    CHECK(countFirstHalfOnsets(patIntro.bass) <= countFirstHalfOnsets(patChorus.bass));
+    CHECK((countFirstHalfOnsets(patIntro.chords) + countFirstHalfOnsets(patIntro.bass)) <
+          (countFirstHalfOnsets(patChorus.chords) + countFirstHalfOnsets(patChorus.bass)));
+
+    int outroLastBarBass = 0;
+    for (const auto& e : patOutro.bass) {
+        if (e.onset_beats >= 12.0 - 1e-4) ++outroLastBarBass;
+    }
+    CHECK(outroLastBarBass == 1);
+}
+
+TEST_CASE("Idiom-preserving Randomise keeps original bigrams, varies unlocked slots, and honors locks", "[progression][idiom]") {
+    StyleProfile song = makeDefaultStyleProfile();
+    song.id = "idiom_song";
+    song.harmony.tonic_pc = 5; // F Major
+    song.harmony.mode = Mode::Major;
+    song.harmony.vocabulary.clear();
+    const std::vector<std::string> syms = {"I", "III7", "IV", "iv", "vi7", "ii7", "V7"};
+    for (const auto& sym : syms) {
+        auto rc = parseRomanChord(sym);
+        REQUIRE(rc.has_value());
+        double cw = (sym == "iv" || sym == "V7") ? 0.40 : 0.05;
+        song.harmony.vocabulary.push_back(ChordVocabEntry{sym, *rc, 1.0 / syms.size(), cw});
+    }
+    song.harmony.reference_progression = {"I", "III7", "IV", "iv"};
+    song.harmony.transitions = {
+        {"I",    {{"III7", 0.70}, {"vi7", 0.15}, {"IV", 0.10}, {"ii7", 0.05}}},
+        {"III7", {{"IV", 0.75},   {"vi7", 0.15}, {"V7", 0.10}}},
+        {"IV",   {{"iv", 0.75},   {"V7", 0.15},  {"ii7", 0.10}}},
+        {"iv",   {{"I", 0.75},    {"V7", 0.15},  {"ii7", 0.10}}},
+        {"vi7",  {{"IV", 0.50},   {"ii7", 0.30}, {"V7", 0.20}}},
+        {"ii7",  {{"V7", 0.65},   {"iv", 0.20},  {"I", 0.15}}},
+        {"V7",   {{"I", 0.75},    {"vi7", 0.15}, {"IV", 0.10}}}
+    };
+    normalizeProfileDistributions(song);
+
+    const auto orig = ProgressionGenerator::generateProgression(song, 4, 0ULL);
+    REQUIRE(orig.size() == 4);
+    CHECK(orig[0].roman_symbol == "I");
+    CHECK(orig[1].roman_symbol == "III7");
+    CHECK(orig[2].roman_symbol == "IV");
+    CHECK(orig[3].roman_symbol == "iv");
+
+    const auto varA = ProgressionGenerator::generateProgression(song, 4, 101ULL);
+    const auto varB = ProgressionGenerator::generateProgression(song, 4, 101ULL);
+    REQUIRE(varA == varB);
+    REQUIRE(varA.size() == 4);
+
+    int diffs = 0;
+    for (size_t i = 0; i < 4; ++i) {
+        if (varA[i].roman_symbol != orig[i].roman_symbol) ++diffs;
+    }
+    CHECK(diffs >= 1);
+
+    std::set<std::pair<std::string, std::string>> origBigrams = {
+        {"I", "III7"}, {"III7", "IV"}, {"IV", "iv"}, {"iv", "I"}
+    };
+    int intactBigrams = 0;
+    for (size_t i = 0; i < 3; ++i) {
+        if (origBigrams.count({varA[i].roman_symbol, varA[i + 1].roman_symbol})) ++intactBigrams;
+    }
+    if (origBigrams.count({varA[3].roman_symbol, varA[0].roman_symbol})) ++intactBigrams;
+    CHECK(intactBigrams >= 1);
+
+    auto lockedProg = orig;
+    lockedProg[1].locked = true;
+    const auto varLocked = ProgressionGenerator::generateProgression(song, 4, 202ULL, lockedProg);
+    CHECK(varLocked[1].locked == true);
+    CHECK(varLocked[1].roman_symbol == "III7");
+}
+
+TEST_CASE("Two-bar groove skeletons round-trip, preserve blend endpoints, and rank varied melody", "[analyzer][groove][critic]") {
+    std::vector<TimedNoteSec> notes;
+    for (int bar = 0; bar < 12; ++bar) {
+        const double bSec = static_cast<double>(bar) * 2.0;
+        const bool isEven = (bar % 2 == 0);
+        // Even bars: 2 hits (beats 1, 3); Odd bars: 4 hits (beats 1, 2, 3, 4)
+        const std::vector<double> chordBeats = isEven ? std::vector<double>{0.0, 1.0}
+                                                      : std::vector<double>{0.0, 0.5, 1.0, 1.5};
+        for (double cb : chordBeats) {
+            notes.push_back({bSec + cb, bSec + cb + 0.35, 36, 100, 33, false});
+            notes.push_back({bSec + cb, bSec + cb + 0.35, 60, 88, 0, false});
+            notes.push_back({bSec + cb, bSec + cb + 0.35, 63, 88, 0, false});
+            notes.push_back({bSec + cb, bSec + cb + 0.35, 67, 88, 0, false});
+        }
+        notes.push_back({bSec + 0.25, bSec + 0.65, 72 + (bar % 4) * 2, 95, 52, false});
+        notes.push_back({bSec + 1.00, bSec + 1.40, 75 + (bar % 3) * 2, 95, 52, false});
+    }
+
+    AnalysisOptions opts;
+    opts.id = "two_bar_groove";
+    opts.name = "Two Bar Groove";
+    opts.bpm_hint = 120.0;
+    const StyleProfile prof = MidiStyleAnalyzer::analyzeTimed(notes, opts);
+    REQUIRE(validate(prof).valid);
+    CHECK(prof.rhythm.chord_pattern != prof.rhythm.chord_pattern_bar2);
+    CHECK(prof.rhythm.chord_pattern_bar2[4] > 0.3);
+
+    const auto dumped = toJson(prof);
+    CHECK(dumped.at("schema_version") == 1);
+    const auto reloaded = fromJson(dumped);
+    REQUIRE(reloaded.has_value());
+    CHECK(reloaded->rhythm.chord_pattern_bar2 == prof.rhythm.chord_pattern_bar2);
+    CHECK(reloaded->rhythm.bass_pattern_bar2 == prof.rhythm.bass_pattern_bar2);
+
+    const auto starter = loadFromFile(presetsRoot() / "90s_hiphop.json");
+    REQUIRE(starter.has_value());
+    BlendParams bp0;
+    bp0.rhythm = 0.0;
+    CHECK(StyleBlender::blend(prof, *starter, bp0).rhythm == prof.rhythm);
+    BlendParams bp1;
+    bp1.rhythm = 1.0;
+    CHECK(StyleBlender::blend(prof, *starter, bp1).rhythm == starter->rhythm);
+
+    const auto prog = ProgressionGenerator::generateProgression(prof, 8, 555ULL);
+    const auto pat = PatternGenerator::generatePattern(prof, prog, PerformParams{}, 555ULL);
+    REQUIRE(pat.melody.size() >= 4);
+    std::set<int> uniqMel;
+    for (const auto& m : pat.melody) uniqMel.insert(m.pitch);
+    CHECK(uniqMel.size() >= 3);
+    for (const auto& c : pat.chords) CHECK(c.pitch >= prof.voicing.sub_bass_clearance_midi);
+    for (const auto& b : pat.bass) CHECK(b.pitch < prof.voicing.sub_bass_clearance_midi);
+}

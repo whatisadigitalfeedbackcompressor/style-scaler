@@ -181,6 +181,16 @@ RhythmAxis blendRhythm(const RhythmAxis& a, const RhythmAxis& b, double w) {
     out.chord_pattern = blendPat(a.chord_pattern, a.chord_onset_grid, b.chord_pattern, b.chord_onset_grid);
     out.bass_pattern = blendPat(a.bass_pattern, a.bass_onset_grid, b.bass_pattern, b.bass_onset_grid);
     out.melody_pattern = blendPat(a.melody_pattern, a.melody_onset_grid, b.melody_pattern, b.melody_onset_grid);
+    if (hasPat(a.chord_pattern_bar2) || hasPat(b.chord_pattern_bar2)) {
+        out.chord_pattern_bar2 = blendPat(
+            hasPat(a.chord_pattern_bar2) ? a.chord_pattern_bar2 : a.chord_pattern, a.chord_onset_grid,
+            hasPat(b.chord_pattern_bar2) ? b.chord_pattern_bar2 : b.chord_pattern, b.chord_onset_grid);
+    }
+    if (hasPat(a.bass_pattern_bar2) || hasPat(b.bass_pattern_bar2)) {
+        out.bass_pattern_bar2 = blendPat(
+            hasPat(a.bass_pattern_bar2) ? a.bass_pattern_bar2 : a.bass_pattern, a.bass_onset_grid,
+            hasPat(b.bass_pattern_bar2) ? b.bass_pattern_bar2 : b.bass_pattern, b.bass_onset_grid);
+    }
     out.syncopation = std::clamp(lerp(a.syncopation, b.syncopation, w), 0.0, 1.0);
     out.anticipation = std::clamp(lerp(a.anticipation, b.anticipation, w), 0.0, 1.0);
     out.swing = std::clamp(lerp(a.swing, b.swing, w), 0.0, 1.0);
