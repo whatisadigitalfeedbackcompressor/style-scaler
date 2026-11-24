@@ -1,14 +1,16 @@
 {
   "schema_version": 1,
   "catalog_name": "StyleScaler Preset Catalog",
-  "updated_at": "2026-11-23T14:03:10Z",
+  "updated_at": "2026-11-24T15:16:28Z",
   "genres": {
     "Drum & Bass": [
       "liquid_dnb",
       "neuro_dnb"
     ],
     "Funk / Disco": [
-      "funk_disco"
+      "victoria_monet_party_girls",
+      "victoria_monet_smoke",
+      "victoria_monet_smoke_reprise"
     ],
     "Hip-Hop": [
       "90s_hiphop"
@@ -17,16 +19,67 @@
       "melodic_house"
     ],
     "Pop / Rock": [
-      "pop_rock"
+      "olivia_rodrigo_all_american_bitch",
+      "olivia_rodrigo_bad_idea_right",
+      "olivia_rodrigo_ballad_of_a_homeschooled_girl",
+      "olivia_rodrigo_get_him_back",
+      "olivia_rodrigo_lacy",
+      "olivia_rodrigo_logical",
+      "olivia_rodrigo_love_is_embarrassing",
+      "olivia_rodrigo_making_the_bed",
+      "olivia_rodrigo_pretty_isn_t_pretty",
+      "olivia_rodrigo_teenage_dream",
+      "olivia_rodrigo_the_grudge",
+      "olivia_rodrigo_vampire"
     ],
     "R&B": [
-      "r_b"
+      "michael_jackson_baby_be_mine",
+      "michael_jackson_beat_it",
+      "michael_jackson_billie_jean",
+      "michael_jackson_human_nature",
+      "michael_jackson_p_y_t_pretty_young_thing",
+      "michael_jackson_the_girl_is_mine",
+      "michael_jackson_the_lady_in_my_life",
+      "michael_jackson_thriller",
+      "michael_jackson_wanna_be_startin_somethin"
     ],
     "R&B / Neo-Soul": [
       "neo_soul"
     ],
     "Trap": [
       "trap"
+    ]
+  },
+  "artists": {
+    "Michael Jackson": [
+      "michael_jackson_baby_be_mine",
+      "michael_jackson_beat_it",
+      "michael_jackson_billie_jean",
+      "michael_jackson_human_nature",
+      "michael_jackson_p_y_t_pretty_young_thing",
+      "michael_jackson_the_girl_is_mine",
+      "michael_jackson_the_lady_in_my_life",
+      "michael_jackson_thriller",
+      "michael_jackson_wanna_be_startin_somethin"
+    ],
+    "Olivia Rodrigo": [
+      "olivia_rodrigo_all_american_bitch",
+      "olivia_rodrigo_bad_idea_right",
+      "olivia_rodrigo_ballad_of_a_homeschooled_girl",
+      "olivia_rodrigo_get_him_back",
+      "olivia_rodrigo_lacy",
+      "olivia_rodrigo_logical",
+      "olivia_rodrigo_love_is_embarrassing",
+      "olivia_rodrigo_making_the_bed",
+      "olivia_rodrigo_pretty_isn_t_pretty",
+      "olivia_rodrigo_teenage_dream",
+      "olivia_rodrigo_the_grudge",
+      "olivia_rodrigo_vampire"
+    ],
+    "Victoria Monet": [
+      "victoria_monet_party_girls",
+      "victoria_monet_smoke",
+      "victoria_monet_smoke_reprise"
     ]
   },
   "presets": [
@@ -42,27 +95,7 @@
       "default_bpm": 92.0,
       "mode": "dorian",
       "tonic_pc": 0,
-      "updated_at": "2026-11-23T14:03:10Z"
-    },
-    {
-      "id": "funk_disco",
-      "name": "Funk / Disco",
-      "genre": "Funk / Disco",
-      "description": "Offline deconstructed Funk / Disco from 11 track(s) via offline_MuScriptor (CPU) [genre: vorbis]",
-      "file": "styles/funk_disco.json",
-      "sha256": "c43a7d357b09053d49487807abe77d5f03b29ee3373b10df29f1ff36683fb224",
-      "bpm_min": 100.0,
-      "bpm_max": 177.0,
-      "default_bpm": 147.1818181818182,
-      "mode": "minor",
-      "tonic_pc": 7,
-      "updated_at": "2026-11-23T14:03:10Z",
-      "tags": [
-        "funk / disco",
-        "r&b / neo-soul",
-        "r&b"
-      ],
-      "genre_source": "vorbis"
+      "updated_at": "2026-11-24T15:16:28Z"
     },
     {
       "id": "liquid_dnb",
@@ -76,7 +109,7 @@
       "default_bpm": 174.0,
       "mode": "minor",
       "tonic_pc": 0,
-      "updated_at": "2026-11-23T14:03:10Z"
+      "updated_at": "2026-11-24T15:16:28Z"
     },
     {
       "id": "melodic_house",
@@ -90,7 +123,187 @@
       "default_bpm": 124.0,
       "mode": "minor",
       "tonic_pc": 0,
-      "updated_at": "2026-11-23T14:03:10Z"
+      "updated_at": "2026-11-24T15:16:28Z"
+    },
+    {
+      "id": "michael_jackson_baby_be_mine",
+      "name": "Baby Be Mine",
+      "genre": "R&B",
+      "description": "Offline deconstructed R&B from 1 track(s) via offline_MuScriptor (CPU) [genre: vorbis]",
+      "file": "styles/michael_jackson_baby_be_mine.json",
+      "sha256": "25870f8a41ad79244c1b644d048a3b30cf3a5611a2f37c8506ac3521d7d25778",
+      "bpm_min": 103.0,
+      "bpm_max": 119.0,
+      "default_bpm": 111.0,
+      "mode": "dorian",
+      "tonic_pc": 7,
+      "updated_at": "2026-11-24T15:16:28Z",
+      "tags": [
+        "r&b"
+      ],
+      "genre_source": "vorbis",
+      "artist": "Michael Jackson",
+      "album": "Thriller"
+    },
+    {
+      "id": "michael_jackson_beat_it",
+      "name": "Beat It",
+      "genre": "R&B",
+      "description": "Offline deconstructed R&B from 1 track(s) via offline_MuScriptor (CPU) [genre: vorbis]",
+      "file": "styles/michael_jackson_beat_it.json",
+      "sha256": "c2f8ced0de77d4113bdd9a75dbaaa962b53d8567ea4e632e8b3c5fe42fe493e4",
+      "bpm_min": 129.0,
+      "bpm_max": 145.0,
+      "default_bpm": 137.0,
+      "mode": "mixolydian",
+      "tonic_pc": 3,
+      "updated_at": "2026-11-24T15:16:28Z",
+      "tags": [
+        "r&b"
+      ],
+      "genre_source": "vorbis",
+      "artist": "Michael Jackson",
+      "album": "Thriller"
+    },
+    {
+      "id": "michael_jackson_billie_jean",
+      "name": "Billie Jean",
+      "genre": "R&B",
+      "description": "Offline deconstructed R&B from 1 track(s) via offline_MuScriptor (CPU) [genre: vorbis]",
+      "file": "styles/michael_jackson_billie_jean.json",
+      "sha256": "e122ead5ca219a8f4a62eb026f42dd5fac7531f62dcc5ab1efc7882e39f4c941",
+      "bpm_min": 110.0,
+      "bpm_max": 126.0,
+      "default_bpm": 118.0,
+      "mode": "minor",
+      "tonic_pc": 6,
+      "updated_at": "2026-11-24T15:16:28Z",
+      "tags": [
+        "r&b"
+      ],
+      "genre_source": "vorbis",
+      "artist": "Michael Jackson",
+      "album": "Thriller"
+    },
+    {
+      "id": "michael_jackson_human_nature",
+      "name": "Human Nature",
+      "genre": "R&B",
+      "description": "Offline deconstructed R&B from 1 track(s) via offline_MuScriptor (CPU) [genre: vorbis]",
+      "file": "styles/michael_jackson_human_nature.json",
+      "sha256": "8ef745b3fc35dd674d767e1f1a876681139056352620a4cf8ac3190c005b164f",
+      "bpm_min": 177.0,
+      "bpm_max": 193.0,
+      "default_bpm": 185.0,
+      "mode": "mixolydian",
+      "tonic_pc": 9,
+      "updated_at": "2026-11-24T15:16:28Z",
+      "tags": [
+        "r&b"
+      ],
+      "genre_source": "vorbis",
+      "artist": "Michael Jackson",
+      "album": "Thriller"
+    },
+    {
+      "id": "michael_jackson_p_y_t_pretty_young_thing",
+      "name": "P.Y.T. (Pretty Young Thing)",
+      "genre": "R&B",
+      "description": "Offline deconstructed R&B from 1 track(s) via offline_MuScriptor (CPU) [genre: vorbis]",
+      "file": "styles/michael_jackson_p_y_t_pretty_young_thing.json",
+      "sha256": "9b0f4469ecabbccd1a36224a140d8039079857c6fb39c71d9914cc994af8a1ae",
+      "bpm_min": 119.0,
+      "bpm_max": 135.0,
+      "default_bpm": 127.0,
+      "mode": "minor",
+      "tonic_pc": 11,
+      "updated_at": "2026-11-24T15:16:28Z",
+      "tags": [
+        "r&b"
+      ],
+      "genre_source": "vorbis",
+      "artist": "Michael Jackson",
+      "album": "Thriller"
+    },
+    {
+      "id": "michael_jackson_the_girl_is_mine",
+      "name": "The Girl Is Mine",
+      "genre": "R&B",
+      "description": "Offline deconstructed R&B from 1 track(s) via offline_MuScriptor (CPU) [genre: vorbis]",
+      "file": "styles/michael_jackson_the_girl_is_mine.json",
+      "sha256": "ea90a038dd8621a7c6130b01245e97be5483d090928231782f49085f0966b4e6",
+      "bpm_min": 157.0,
+      "bpm_max": 173.0,
+      "default_bpm": 165.0,
+      "mode": "major",
+      "tonic_pc": 4,
+      "updated_at": "2026-11-24T15:16:28Z",
+      "tags": [
+        "r&b"
+      ],
+      "genre_source": "vorbis",
+      "artist": "Michael Jackson",
+      "album": "Thriller"
+    },
+    {
+      "id": "michael_jackson_the_lady_in_my_life",
+      "name": "The Lady In My Life",
+      "genre": "R&B",
+      "description": "Offline deconstructed R&B from 1 track(s) via offline_MuScriptor (CPU) [genre: vorbis]",
+      "file": "styles/michael_jackson_the_lady_in_my_life.json",
+      "sha256": "506bd6aa593f56924f66723df84e0d4677bc607613bb662d7012a64521dfa626",
+      "bpm_min": 135.0,
+      "bpm_max": 151.0,
+      "default_bpm": 143.0,
+      "mode": "minor",
+      "tonic_pc": 9,
+      "updated_at": "2026-11-24T15:16:28Z",
+      "tags": [
+        "r&b"
+      ],
+      "genre_source": "vorbis",
+      "artist": "Michael Jackson",
+      "album": "Thriller"
+    },
+    {
+      "id": "michael_jackson_thriller",
+      "name": "Thriller",
+      "genre": "R&B",
+      "description": "Offline deconstructed R&B from 1 track(s) via offline_MuScriptor (CPU) [genre: vorbis]",
+      "file": "styles/michael_jackson_thriller.json",
+      "sha256": "928460dead0177902dd990f6226b59711cf7e28c807a3ee96911fdf02d090e6f",
+      "bpm_min": 113.0,
+      "bpm_max": 129.0,
+      "default_bpm": 121.0,
+      "mode": "minor",
+      "tonic_pc": 1,
+      "updated_at": "2026-11-24T15:16:28Z",
+      "tags": [
+        "r&b"
+      ],
+      "genre_source": "vorbis",
+      "artist": "Michael Jackson",
+      "album": "Thriller"
+    },
+    {
+      "id": "michael_jackson_wanna_be_startin_somethin",
+      "name": "Wanna Be Startin' Somethin'",
+      "genre": "R&B",
+      "description": "Offline deconstructed R&B from 1 track(s) via offline_MuScriptor (CPU) [genre: vorbis]",
+      "file": "styles/michael_jackson_wanna_be_startin_somethin.json",
+      "sha256": "b1bcc0e6e7e85bc6b3b6ef7b406cc2b25e15d9ca01adf350f11682468a645da5",
+      "bpm_min": 177.0,
+      "bpm_max": 193.0,
+      "default_bpm": 185.0,
+      "mode": "mixolydian",
+      "tonic_pc": 4,
+      "updated_at": "2026-11-24T15:16:28Z",
+      "tags": [
+        "r&b"
+      ],
+      "genre_source": "vorbis",
+      "artist": "Michael Jackson",
+      "album": "Thriller"
     },
     {
       "id": "neo_soul",
@@ -104,7 +317,7 @@
       "default_bpm": 88.0,
       "mode": "dorian",
       "tonic_pc": 7,
-      "updated_at": "2026-11-23T14:03:10Z"
+      "updated_at": "2026-11-24T15:16:28Z"
     },
     {
       "id": "neuro_dnb",
@@ -118,43 +331,247 @@
       "default_bpm": 174.0,
       "mode": "phrygian",
       "tonic_pc": 0,
-      "updated_at": "2026-11-23T14:03:10Z"
+      "updated_at": "2026-11-24T15:16:28Z"
     },
     {
-      "id": "pop_rock",
-      "name": "Pop / Rock",
+      "id": "olivia_rodrigo_all_american_bitch",
+      "name": "all-american bitch",
       "genre": "Pop / Rock",
-      "description": "Offline deconstructed Pop / Rock from 11 track(s) via offline_MuScriptor (CPU) [genre: path]",
-      "file": "styles/pop_rock.json",
-      "sha256": "89bd75ec64c5dd934445e5d117b526a4f436f0f5794518f977b535abddb738b2",
-      "bpm_min": 110.0,
-      "bpm_max": 171.0,
-      "default_bpm": 140.0909090909091,
+      "description": "Offline deconstructed Pop / Rock from 1 track(s) via offline_MuScriptor (CPU) [genre: path]",
+      "file": "styles/olivia_rodrigo_all_american_bitch.json",
+      "sha256": "4e698b9eb3abe7b78713c7914024773f5707a90a806ef01d1e1cc213561248eb",
+      "bpm_min": 147.0,
+      "bpm_max": 163.0,
+      "default_bpm": 155.0,
       "mode": "major",
-      "tonic_pc": 9,
-      "updated_at": "2026-11-23T14:03:10Z",
+      "tonic_pc": 6,
+      "updated_at": "2026-11-24T15:16:28Z",
       "tags": [
         "pop / rock"
       ],
-      "genre_source": "path"
+      "genre_source": "path",
+      "artist": "Olivia Rodrigo",
+      "album": "GUTS"
     },
     {
-      "id": "r_b",
-      "name": "R&B",
-      "genre": "R&B",
-      "description": "Offline deconstructed R&B from 9 track(s) via offline_MuScriptor (CPU) [genre: vorbis]",
-      "file": "styles/r_b.json",
-      "sha256": "4c02ac204a8d821a7602d08b2c5f29b00c666d31968035e1e74d22c084166f08",
-      "bpm_min": 103.0,
-      "bpm_max": 193.0,
-      "default_bpm": 149.88888888888889,
-      "mode": "dorian",
-      "tonic_pc": 4,
-      "updated_at": "2026-11-23T14:03:10Z",
+      "id": "olivia_rodrigo_bad_idea_right",
+      "name": "bad idea right?",
+      "genre": "Pop / Rock",
+      "description": "Offline deconstructed Pop / Rock from 1 track(s) via offline_MuScriptor (CPU) [genre: path]",
+      "file": "styles/olivia_rodrigo_bad_idea_right.json",
+      "sha256": "caf3ef1543bd83ddb9d9b30f82b32f8dc0d72f3d02c22a33059cc38302b50dce",
+      "bpm_min": 122.0,
+      "bpm_max": 138.0,
+      "default_bpm": 130.0,
+      "mode": "major",
+      "tonic_pc": 9,
+      "updated_at": "2026-11-24T15:16:28Z",
       "tags": [
-        "r&b"
+        "pop / rock"
       ],
-      "genre_source": "vorbis"
+      "genre_source": "path",
+      "artist": "Olivia Rodrigo",
+      "album": "GUTS"
+    },
+    {
+      "id": "olivia_rodrigo_ballad_of_a_homeschooled_girl",
+      "name": "ballad of a homeschooled girl",
+      "genre": "Pop / Rock",
+      "description": "Offline deconstructed Pop / Rock from 1 track(s) via offline_MuScriptor (CPU) [genre: path]",
+      "file": "styles/olivia_rodrigo_ballad_of_a_homeschooled_girl.json",
+      "sha256": "2b5141db61a563b193433b356da66b9c3f58f118d6a33c747e4311ad66c7927d",
+      "bpm_min": 110.0,
+      "bpm_max": 126.0,
+      "default_bpm": 118.0,
+      "mode": "mixolydian",
+      "tonic_pc": 8,
+      "updated_at": "2026-11-24T15:16:28Z",
+      "tags": [
+        "pop / rock"
+      ],
+      "genre_source": "path",
+      "artist": "Olivia Rodrigo",
+      "album": "GUTS"
+    },
+    {
+      "id": "olivia_rodrigo_get_him_back",
+      "name": "get him back!",
+      "genre": "Pop / Rock",
+      "description": "Offline deconstructed Pop / Rock from 1 track(s) via offline_MuScriptor (CPU) [genre: path]",
+      "file": "styles/olivia_rodrigo_get_him_back.json",
+      "sha256": "d52c62a00f75e2e012f8d7838d1aeb7e951dabb7a844e1866c5b8ae2a724be54",
+      "bpm_min": 154.0,
+      "bpm_max": 170.0,
+      "default_bpm": 162.0,
+      "mode": "major",
+      "tonic_pc": 5,
+      "updated_at": "2026-11-24T15:16:28Z",
+      "tags": [
+        "pop / rock"
+      ],
+      "genre_source": "path",
+      "artist": "Olivia Rodrigo",
+      "album": "GUTS"
+    },
+    {
+      "id": "olivia_rodrigo_lacy",
+      "name": "lacy",
+      "genre": "Pop / Rock",
+      "description": "Offline deconstructed Pop / Rock from 1 track(s) via offline_MuScriptor (CPU) [genre: path]",
+      "file": "styles/olivia_rodrigo_lacy.json",
+      "sha256": "6640f400b1e885725e30bbd59e9aae059f3c5d904156e571ad609a0c7ad21f9d",
+      "bpm_min": 146.0,
+      "bpm_max": 162.0,
+      "default_bpm": 154.0,
+      "mode": "major",
+      "tonic_pc": 3,
+      "updated_at": "2026-11-24T15:16:28Z",
+      "tags": [
+        "pop / rock"
+      ],
+      "genre_source": "path",
+      "artist": "Olivia Rodrigo",
+      "album": "GUTS"
+    },
+    {
+      "id": "olivia_rodrigo_logical",
+      "name": "logical",
+      "genre": "Pop / Rock",
+      "description": "Offline deconstructed Pop / Rock from 1 track(s) via offline_MuScriptor (CPU) [genre: path]",
+      "file": "styles/olivia_rodrigo_logical.json",
+      "sha256": "a475b85a20821234ae3c25a3c9483b892e9eb950a5f65d9178ca38179800e1fa",
+      "bpm_min": 155.0,
+      "bpm_max": 171.0,
+      "default_bpm": 163.0,
+      "mode": "major",
+      "tonic_pc": 7,
+      "updated_at": "2026-11-24T15:16:28Z",
+      "tags": [
+        "pop / rock"
+      ],
+      "genre_source": "path",
+      "artist": "Olivia Rodrigo",
+      "album": "GUTS"
+    },
+    {
+      "id": "olivia_rodrigo_love_is_embarrassing",
+      "name": "love is embarrassing",
+      "genre": "Pop / Rock",
+      "description": "Offline deconstructed Pop / Rock from 1 track(s) via offline_MuScriptor (CPU) [genre: path]",
+      "file": "styles/olivia_rodrigo_love_is_embarrassing.json",
+      "sha256": "8050bb502efb3b6eced24bbebde63171e1183398e80e6e3ad21cbda571cc94c5",
+      "bpm_min": 152.0,
+      "bpm_max": 168.0,
+      "default_bpm": 160.0,
+      "mode": "major",
+      "tonic_pc": 9,
+      "updated_at": "2026-11-24T15:16:28Z",
+      "tags": [
+        "pop / rock"
+      ],
+      "genre_source": "path",
+      "artist": "Olivia Rodrigo",
+      "album": "GUTS"
+    },
+    {
+      "id": "olivia_rodrigo_making_the_bed",
+      "name": "making the bed",
+      "genre": "Pop / Rock",
+      "description": "Offline deconstructed Pop / Rock from 1 track(s) via offline_MuScriptor (CPU) [genre: path]",
+      "file": "styles/olivia_rodrigo_making_the_bed.json",
+      "sha256": "d828dc6d39d501f9d8fe7ed9f82819f4b1ea76815c9efb3f3f541cdbc8e151e1",
+      "bpm_min": 124.0,
+      "bpm_max": 140.0,
+      "default_bpm": 132.0,
+      "mode": "major",
+      "tonic_pc": 7,
+      "updated_at": "2026-11-24T15:16:28Z",
+      "tags": [
+        "pop / rock"
+      ],
+      "genre_source": "path",
+      "artist": "Olivia Rodrigo",
+      "album": "GUTS"
+    },
+    {
+      "id": "olivia_rodrigo_pretty_isn_t_pretty",
+      "name": "pretty isn\u2019t pretty",
+      "genre": "Pop / Rock",
+      "description": "Offline deconstructed Pop / Rock from 1 track(s) via offline_MuScriptor (CPU) [genre: path]",
+      "file": "styles/olivia_rodrigo_pretty_isn_t_pretty.json",
+      "sha256": "f60717154c9f3c461f1e65d3fa62f223ece7be0415b94d13134227c8c26812cf",
+      "bpm_min": 113.0,
+      "bpm_max": 129.0,
+      "default_bpm": 121.0,
+      "mode": "major",
+      "tonic_pc": 2,
+      "updated_at": "2026-11-24T15:16:28Z",
+      "tags": [
+        "pop / rock"
+      ],
+      "genre_source": "path",
+      "artist": "Olivia Rodrigo",
+      "album": "GUTS"
+    },
+    {
+      "id": "olivia_rodrigo_teenage_dream",
+      "name": "teenage dream",
+      "genre": "Pop / Rock",
+      "description": "Offline deconstructed Pop / Rock from 1 track(s) via offline_MuScriptor (CPU) [genre: path]",
+      "file": "styles/olivia_rodrigo_teenage_dream.json",
+      "sha256": "76d4510046905c7a4e2b7463cff88bbd64e7119ccc76b064cbcd5b1c15a7bedd",
+      "bpm_min": 130.0,
+      "bpm_max": 146.0,
+      "default_bpm": 138.0,
+      "mode": "major",
+      "tonic_pc": 0,
+      "updated_at": "2026-11-24T15:16:28Z",
+      "tags": [
+        "pop / rock"
+      ],
+      "genre_source": "path",
+      "artist": "Olivia Rodrigo",
+      "album": "GUTS"
+    },
+    {
+      "id": "olivia_rodrigo_the_grudge",
+      "name": "the grudge",
+      "genre": "Pop / Rock",
+      "description": "Offline deconstructed Pop / Rock from 1 track(s) via offline_MuScriptor (CPU) [genre: path]",
+      "file": "styles/olivia_rodrigo_the_grudge.json",
+      "sha256": "b01cb24e30a939091c33464b20a9c4b7d19515883417fa9d811b8c6675a6c9fa",
+      "bpm_min": 119.0,
+      "bpm_max": 135.0,
+      "default_bpm": 127.0,
+      "mode": "major",
+      "tonic_pc": 10,
+      "updated_at": "2026-11-24T15:16:28Z",
+      "tags": [
+        "pop / rock"
+      ],
+      "genre_source": "path",
+      "artist": "Olivia Rodrigo",
+      "album": "GUTS"
+    },
+    {
+      "id": "olivia_rodrigo_vampire",
+      "name": "vampire",
+      "genre": "Pop / Rock",
+      "description": "Offline deconstructed Pop / Rock from 1 track(s) via offline_MuScriptor (CPU) [genre: path]",
+      "file": "styles/olivia_rodrigo_vampire.json",
+      "sha256": "1ee696bcae35309dcbad9db41200f32459be0dba948224f4c5fd8906788635ca",
+      "bpm_min": 128.0,
+      "bpm_max": 144.0,
+      "default_bpm": 136.0,
+      "mode": "major",
+      "tonic_pc": 5,
+      "updated_at": "2026-11-24T15:16:28Z",
+      "tags": [
+        "pop / rock"
+      ],
+      "genre_source": "path",
+      "artist": "Olivia Rodrigo",
+      "album": "GUTS"
     },
     {
       "id": "trap",
@@ -168,7 +585,73 @@
       "default_bpm": 140.0,
       "mode": "phrygian",
       "tonic_pc": 0,
-      "updated_at": "2026-11-23T14:03:10Z"
+      "updated_at": "2026-11-24T15:16:28Z"
+    },
+    {
+      "id": "victoria_monet_party_girls",
+      "name": "Party Girls",
+      "genre": "Funk / Disco",
+      "description": "Offline deconstructed Funk / Disco from 1 track(s) via offline_MuScriptor (CPU) [genre: vorbis]",
+      "file": "styles/victoria_monet_party_girls.json",
+      "sha256": "795b2fbf9981f1b1d94b3cb4da50d39980af88a91b928a2165b13be33ea12842",
+      "bpm_min": 148.0,
+      "bpm_max": 164.0,
+      "default_bpm": 156.0,
+      "mode": "minor",
+      "tonic_pc": 9,
+      "updated_at": "2026-11-24T15:16:28Z",
+      "tags": [
+        "funk / disco",
+        "r&b / neo-soul",
+        "r&b"
+      ],
+      "genre_source": "vorbis",
+      "artist": "Victoria Monet",
+      "album": "JAGUAR II"
+    },
+    {
+      "id": "victoria_monet_smoke",
+      "name": "Smoke",
+      "genre": "Funk / Disco",
+      "description": "Offline deconstructed Funk / Disco from 1 track(s) via offline_MuScriptor (CPU) [genre: vorbis]",
+      "file": "styles/victoria_monet_smoke.json",
+      "sha256": "f913c69f3f11b5cf916a3bb3fabe1dfe98d8181ea370d397a4ddb0cf057c3a80",
+      "bpm_min": 128.0,
+      "bpm_max": 144.0,
+      "default_bpm": 136.0,
+      "mode": "dorian",
+      "tonic_pc": 7,
+      "updated_at": "2026-11-24T15:16:28Z",
+      "tags": [
+        "funk / disco",
+        "r&b / neo-soul",
+        "r&b"
+      ],
+      "genre_source": "vorbis",
+      "artist": "Victoria Monet",
+      "album": "JAGUAR II"
+    },
+    {
+      "id": "victoria_monet_smoke_reprise",
+      "name": "Smoke (Reprise)",
+      "genre": "Funk / Disco",
+      "description": "Offline deconstructed Funk / Disco from 1 track(s) via offline_MuScriptor (CPU) [genre: vorbis]",
+      "file": "styles/victoria_monet_smoke_reprise.json",
+      "sha256": "6ad761e552b20eb01e74951628454a6f4090a1ddf9754c2f360d84fe4f81d835",
+      "bpm_min": 122.0,
+      "bpm_max": 138.0,
+      "default_bpm": 130.0,
+      "mode": "minor",
+      "tonic_pc": 4,
+      "updated_at": "2026-11-24T15:16:28Z",
+      "tags": [
+        "funk / disco",
+        "r&b / neo-soul",
+        "r&b"
+      ],
+      "genre_source": "vorbis",
+      "artist": "Victoria Monet",
+      "album": "JAGUAR II"
     }
   ]
 }
