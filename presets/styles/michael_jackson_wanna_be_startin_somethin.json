@@ -1,60 +1,58 @@
 {
   "album": "Thriller",
   "artist": "Michael Jackson",
-  "bpm_max": 193.0,
-  "bpm_min": 177.0,
-  "default_bpm": 185.0,
+  "bpm_max": 130.0,
+  "bpm_min": 114.0,
+  "default_bpm": 122.0,
   "description": "Offline deconstructed R&B from 1 track(s) via offline_MuScriptor (CPU) [genre: vorbis]",
   "genre": "R&B",
   "genre_source": "vorbis",
   "harmony": {
-    "chromaticism": 0.030061349693251516,
+    "chromaticism": 0.03189910979228492,
     "mode": "mixolydian",
     "reference_progression": [
-      "v",
-      "v",
-      "v",
-      "bVIIsus2"
+      "bVII",
+      "bVII",
+      "bVIIsus2",
+      "v"
     ],
     "tonic_pc": 4,
     "transitions": {
-      "I": {
-        "I": 0.0011448196908986838,
-        "bVII": 0.9397061629460027,
-        "bVIIsus2": 0.020988360999809202,
-        "i": 0.005724098454493419,
-        "v": 0.032436557908796036
-      },
       "bVII": {
-        "I": 0.004379562043795621,
-        "bVII": 0.0014598540145985398,
-        "bVIIsus2": 0.016058394160583942,
-        "i": 0.004379562043795621,
-        "v": 0.9737226277372263
+        "bVII": 0.012385919165580185,
+        "bVIIsus2": 0.9289439374185138,
+        "bVIIsus4": 0.009778357235984355,
+        "v": 0.04889178617992178
       },
       "bVIIsus2": {
-        "I": 0.004410467509556013,
-        "bVII": 0.007350779182593353,
-        "bVIIsus2": 0.003234342840341076,
-        "i": 0.9600117612466922,
-        "v": 0.024992649220817405
+        "bVII": 0.059748427672955975,
+        "bVIIsus2": 0.0031446540880503146,
+        "bVIIsus4": 0.009433962264150943,
+        "v": 0.9276729559748428
       },
-      "i": {
-        "I": 0.9510632100203904,
-        "bVII": 0.007282260413632391,
-        "bVIIsus2": 0.016020972909991264,
-        "i": 0.0008738712496358871,
-        "v": 0.02475968540635013
+      "bVIIsus4": {
+        "bVII": 0.9174679487179487,
+        "bVIIsus2": 0.02003205128205128,
+        "bVIIsus4": 0.0024038461538461535,
+        "v": 0.06009615384615384
       },
       "v": {
-        "I": 0.0044418122594018375,
-        "bVII": 0.007403020432336393,
-        "bVIIsus2": 0.9786793011548712,
-        "i": 0.0044418122594018375,
-        "v": 0.005034053893988749
+        "bVII": 0.061290322580645165,
+        "bVIIsus2": 0.01612903225806452,
+        "bVIIsus4": 0.9129032258064517,
+        "v": 0.009677419354838712
       }
     },
     "vocabulary": [
+      {
+        "accidental": -1,
+        "bass_degree_offset": 0,
+        "cadence_weight": 0.3333333333333333,
+        "degree": 7,
+        "quality": "maj",
+        "symbol": "bVII",
+        "weight": 0.4523809523809524
+      },
       {
         "accidental": 0,
         "bass_degree_offset": 0,
@@ -62,7 +60,7 @@
         "degree": 5,
         "quality": "min",
         "symbol": "v",
-        "weight": 0.4358974358974359
+        "weight": 0.35714285714285715
       },
       {
         "accidental": -1,
@@ -71,60 +69,42 @@
         "degree": 7,
         "quality": "sus2",
         "symbol": "bVIIsus2",
-        "weight": 0.28205128205128205
+        "weight": 0.11904761904761904
       },
       {
         "accidental": -1,
         "bass_degree_offset": 0,
-        "cadence_weight": 0.0,
+        "cadence_weight": 0.3333333333333333,
         "degree": 7,
-        "quality": "maj",
-        "symbol": "bVII",
-        "weight": 0.1282051282051282
-      },
-      {
-        "accidental": 0,
-        "bass_degree_offset": 0,
-        "cadence_weight": 0.3333333333333333,
-        "degree": 1,
-        "quality": "maj",
-        "symbol": "I",
-        "weight": 0.07692307692307693
-      },
-      {
-        "accidental": 0,
-        "bass_degree_offset": 0,
-        "cadence_weight": 0.3333333333333333,
-        "degree": 1,
-        "quality": "min",
-        "symbol": "i",
-        "weight": 0.07692307692307693
+        "quality": "sus4",
+        "symbol": "bVIIsus4",
+        "weight": 0.07142857142857142
       }
     ]
   },
   "id": "michael_jackson_wanna_be_startin_somethin",
   "melody": {
-    "arch_contour": 0.5833333333333334,
-    "chord_tone_ratio": 0.3333333333333333,
+    "arch_contour": 0.2592592592592595,
+    "chord_tone_ratio": 0.5454545454545454,
     "interval_histogram": [
       0.0,
       0.0,
       0.0,
       0.0,
+      0.1,
       0.0,
       0.0,
       0.0,
       0.0,
       0.0,
-      0.0,
+      0.1,
+      0.1,
+      0.2,
+      0.2,
       0.2,
       0.0,
-      0.6,
       0.0,
-      0.2,
-      0.0,
-      0.0,
-      0.0,
+      0.1,
       0.0,
       0.0,
       0.0,
@@ -133,71 +113,101 @@
       0.0,
       0.0
     ],
-    "legato_ratio": 0.626301567285173,
-    "motif_density": 0.1,
+    "legato_ratio": 0.3842653061224464,
+    "motif_density": 0.1375,
     "motif_repetition": 0.1,
     "reference_motif": [
       {
+        "ct": false,
+        "deg": -3,
+        "dur": 1.0573333333333252,
+        "step16": 14
+      },
+      {
+        "ct": false,
+        "deg": -3,
+        "dur": 1.0,
+        "step16": 16
+      },
+      {
+        "ct": false,
+        "deg": 0,
+        "dur": 1.0,
+        "step16": 20
+      },
+      {
         "ct": true,
-        "deg": -1,
-        "dur": 1.4799999999999904,
-        "step16": 0
+        "deg": 1,
+        "dur": 1.0,
+        "step16": 21
       },
       {
         "ct": false,
         "deg": 0,
-        "dur": 1.603333333333321,
-        "step16": 23
-      },
-      {
-        "ct": false,
-        "deg": 0,
-        "dur": 1.4800000000000124,
+        "dur": 1.0573333333333252,
         "step16": 24
+      },
+      {
+        "ct": true,
+        "deg": 1,
+        "dur": 2.0333333333333337,
+        "step16": 26
+      },
+      {
+        "ct": true,
+        "deg": -4,
+        "dur": 1.0573333333333252,
+        "step16": 30
+      },
+      {
+        "ct": true,
+        "deg": -4,
+        "dur": 1.0,
+        "step16": 31
       }
     ],
-    "register_high": 73,
+    "register_high": 74,
     "register_low": 66,
-    "tension_tone_ratio": 0.65
+    "tension_tone_ratio": 0.45454545454545453
   },
   "name": "Wanna Be Startin' Somethin'",
   "processed_tracks": [
     "24d3f5bb130e7f93053693cab9072f9166bdcbd5f59d105531e26190f5f76e93"
   ],
   "rhythm": {
-    "anticipation": 0.30303030303030304,
+    "anticipation": 0.4545454545454546,
     "bass_onset_grid": [
       1.0,
-      0.16666666666666666,
-      0.5,
-      0.3333333333333333,
-      0.5,
-      0.8333333333333334,
       0.0,
-      0.6666666666666666,
+      1.0,
+      0.0,
+      1.0,
+      0.0,
+      1.0,
       0.6666666666666666,
       0.0,
-      0.5,
-      0.5,
-      0.5,
-      0.8333333333333334,
-      0.16666666666666666,
-      0.3333333333333333
+      1.0,
+      0.0,
+      0.0,
+      1.0,
+      1.0,
+      0.0,
+      1.0
     ],
     "bass_pattern": [
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      1.0,
+      0.0,
       1.0,
       0.0,
       0.0,
-      0.0,
-      0.8823529411764706,
       1.0,
       0.0,
       0.0,
-      0.9411764705882354,
-      0.0,
-      0.8823529411764706,
-      0.0,
-      0.0,
+      1.0,
       1.0,
       0.0,
       0.0
@@ -205,627 +215,181 @@
     "chord_onset_grid": [
       1.0,
       0.0,
-      0.75,
-      0.25,
-      0.25,
-      1.0,
+      0.6,
       0.0,
-      0.5,
-      0.75,
-      0.25,
-      0.5,
-      0.5,
-      0.75,
-      0.75,
-      0.25,
-      0.75
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      0.2,
+      1.0,
+      0.2,
+      0.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
     ],
     "chord_pattern": [
-      0.9130434782608695,
       0.0,
       0.0,
       0.0,
       0.0,
       1.0,
+      1.0,
+      1.0,
+      1.0,
       0.0,
-      0.8260869565217391,
-      0.9130434782608695,
-      0.0,
-      0.8260869565217391,
+      1.0,
       0.0,
       0.0,
-      0.9130434782608695,
+      1.0,
+      0.0,
       0.0,
       0.0
     ],
-    "harmonic_pacing": 0.5555555555555556,
+    "harmonic_pacing": 0.4,
     "melody_onset_grid": [
+      0.4,
+      0.0,
+      0.0,
+      0.0,
+      0.2,
+      0.2,
+      0.0,
+      0.0,
+      0.2,
+      0.0,
+      0.2,
+      0.0,
+      0.0,
+      0.0,
       1.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.5,
-      0.5,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      1.0
+      0.0
     ],
     "melody_pattern": [
+      0.85,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
       1.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
       0.0
     ],
     "subdivision": 16,
-    "sustain_ratio": 0.7400000000000062,
-    "swing": 0.5740186294078533,
-    "syncopation": 0.6597222222222223
+    "sustain_ratio": 0.4880000000000041,
+    "swing": 0.29150320049556194,
+    "syncopation": 0.6934782608695652
   },
   "schema_version": 1,
   "sections": {
     "chorus": {
       "harmony": {
-        "chromaticism": 0.044464609800362986,
-        "mode": "mixolydian",
-        "reference_progression": [
-          "Isus2",
-          "bVIIsus2",
-          "bVIIsus2",
-          "bVIIsus2"
-        ],
-        "tonic_pc": 4,
-        "transitions": {
-          "I": {
-            "I": 0.002036659877800407,
-            "Isus2": 0.9504412763068567,
-            "bVIIsus2": 0.0373387644263408,
-            "i": 0.010183299389002034
-          },
-          "Isus2": {
-            "I": 0.007798960138648179,
-            "Isus2": 0.0025996533795493936,
-            "bVIIsus2": 0.9818024263431542,
-            "i": 0.007798960138648179
-          },
-          "bVIIsus2": {
-            "I": 0.007897507897507896,
-            "Isus2": 0.013162513162513162,
-            "bVIIsus2": 0.005791505791505791,
-            "i": 0.9731484731484732
-          },
-          "i": {
-            "I": 0.9570245081118398,
-            "Isus2": 0.01294442526751812,
-            "bVIIsus2": 0.028477735588539863,
-            "i": 0.0015533310321021742
-          }
-        },
-        "vocabulary": [
-          {
-            "accidental": -1,
-            "bass_degree_offset": 0,
-            "cadence_weight": 0.0,
-            "degree": 7,
-            "quality": "sus2",
-            "symbol": "bVIIsus2",
-            "weight": 0.5
-          },
-          {
-            "accidental": 0,
-            "bass_degree_offset": 0,
-            "cadence_weight": 0.0,
-            "degree": 1,
-            "quality": "sus2",
-            "symbol": "Isus2",
-            "weight": 0.22727272727272727
-          },
-          {
-            "accidental": 0,
-            "bass_degree_offset": 0,
-            "cadence_weight": 0.5,
-            "degree": 1,
-            "quality": "maj",
-            "symbol": "I",
-            "weight": 0.13636363636363635
-          },
-          {
-            "accidental": 0,
-            "bass_degree_offset": 0,
-            "cadence_weight": 0.5,
-            "degree": 1,
-            "quality": "min",
-            "symbol": "i",
-            "weight": 0.13636363636363635
-          }
-        ]
-      },
-      "melody": {
-        "arch_contour": 0.5833333333333334,
-        "chord_tone_ratio": 0.2,
-        "interval_histogram": [
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.25,
-          0.0,
-          0.5,
-          0.0,
-          0.25,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0
-        ],
-        "legato_ratio": 0.5328769591064658,
-        "motif_density": 0.125,
-        "motif_repetition": 0.1,
-        "reference_motif": [
-          {
-            "ct": true,
-            "deg": -1,
-            "dur": 1.4799999999999904,
-            "step16": 0
-          },
-          {
-            "ct": false,
-            "deg": 0,
-            "dur": 1.603333333333321,
-            "step16": 23
-          },
-          {
-            "ct": false,
-            "deg": 0,
-            "dur": 1.4800000000000124,
-            "step16": 24
-          }
-        ],
-        "register_high": 73,
-        "register_low": 66,
-        "tension_tone_ratio": 0.65
-      },
-      "rhythm": {
-        "anticipation": 0.25,
-        "bass_onset_grid": [
-          1.0,
-          0.0,
-          0.5,
-          0.25,
-          0.25,
-          1.0,
-          0.0,
-          0.25,
-          0.75,
-          0.0,
-          0.25,
-          0.5,
-          0.5,
-          0.5,
-          0.25,
-          0.25
-        ],
-        "bass_pattern": [
-          0.9,
-          0.0,
-          0.0,
-          0.0,
-          0.7,
-          1.0,
-          0.0,
-          0.0,
-          0.9,
-          0.0,
-          0.7,
-          0.0,
-          0.0,
-          0.8,
-          0.0,
-          0.0
-        ],
-        "chord_onset_grid": [
-          1.0,
-          0.0,
-          0.75,
-          0.25,
-          0.25,
-          1.0,
-          0.0,
-          0.5,
-          0.75,
-          0.25,
-          0.5,
-          0.5,
-          0.5,
-          0.5,
-          0.25,
-          0.5
-        ],
-        "chord_pattern": [
-          0.9,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          1.0,
-          0.0,
-          0.8,
-          0.9,
-          0.0,
-          0.8,
-          0.0,
-          0.0,
-          0.8,
-          0.0,
-          0.0
-        ],
-        "harmonic_pacing": 0.8,
-        "melody_onset_grid": [
-          1.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.5,
-          0.5,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.5
-        ],
-        "melody_pattern": [
-          1.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0
-        ],
-        "subdivision": 16,
-        "sustain_ratio": 0.7400000000000062,
-        "swing": 0.43662674650698907,
-        "syncopation": 0.6470588235294118
-      },
-      "voicing": {
-        "bass_register_high": 40,
-        "bass_register_low": 35,
-        "center_pitch": 62,
-        "drop2_prob": 0.0,
-        "extension_richness": 0.0,
-        "inversion_prob": 1.0,
-        "max_notes": 3,
-        "min_notes": 3,
-        "register_high": 68,
-        "register_low": 57,
-        "spread_semitones": 9.0,
-        "sub_bass_clearance_midi": 57,
-        "voice_leading_tightness": 0.9285714285714286
-      }
-    },
-    "intro": {
-      "harmony": {
-        "chromaticism": 0.0,
+        "chromaticism": 0.03189910979228492,
         "mode": "mixolydian",
         "reference_progression": [
           "bVII",
-          "Vsus4",
-          "Vsus4",
+          "bVII",
+          "bVIIsus2",
           "v"
         ],
         "tonic_pc": 4,
         "transitions": {
-          "Vsus4": {
-            "Vsus4": 0.006982156710628394,
-            "bVII": 0.011636927851047325,
-            "v": 0.9813809154383243
-          },
           "bVII": {
-            "Vsus4": 0.9862909367859863,
-            "bVII": 0.002284843869002285,
-            "v": 0.011424219345011425
+            "bVII": 0.012385919165580185,
+            "bVIIsus2": 0.9289439374185138,
+            "bVIIsus4": 0.009778357235984355,
+            "v": 0.04889178617992178
+          },
+          "bVIIsus2": {
+            "bVII": 0.059748427672955975,
+            "bVIIsus2": 0.0031446540880503146,
+            "bVIIsus4": 0.009433962264150943,
+            "v": 0.9276729559748428
+          },
+          "bVIIsus4": {
+            "bVII": 0.9174679487179487,
+            "bVIIsus2": 0.02003205128205128,
+            "bVIIsus4": 0.0024038461538461535,
+            "v": 0.06009615384615384
           },
           "v": {
-            "Vsus4": 0.044977511244377814,
-            "bVII": 0.9520239880059971,
-            "v": 0.002998500749625188
+            "bVII": 0.061290322580645165,
+            "bVIIsus2": 0.01612903225806452,
+            "bVIIsus4": 0.9129032258064517,
+            "v": 0.009677419354838712
           }
         },
         "vocabulary": [
           {
+            "accidental": -1,
+            "bass_degree_offset": 0,
+            "cadence_weight": 0.3333333333333333,
+            "degree": 7,
+            "quality": "maj",
+            "symbol": "bVII",
+            "weight": 0.4523809523809524
+          },
+          {
             "accidental": 0,
             "bass_degree_offset": 0,
-            "cadence_weight": 0.5,
+            "cadence_weight": 0.3333333333333333,
             "degree": 5,
-            "quality": "sus4",
-            "symbol": "Vsus4",
-            "weight": 0.6
+            "quality": "min",
+            "symbol": "v",
+            "weight": 0.35714285714285715
           },
           {
             "accidental": -1,
             "bass_degree_offset": 0,
             "cadence_weight": 0.0,
             "degree": 7,
-            "quality": "maj",
-            "symbol": "bVII",
-            "weight": 0.2
+            "quality": "sus2",
+            "symbol": "bVIIsus2",
+            "weight": 0.11904761904761904
           },
-          {
-            "accidental": 0,
-            "bass_degree_offset": 0,
-            "cadence_weight": 0.5,
-            "degree": 5,
-            "quality": "min",
-            "symbol": "v",
-            "weight": 0.2
-          }
-        ]
-      },
-      "melody": {
-        "arch_contour": 0.5833333333333334,
-        "chord_tone_ratio": 0.3333333333333333,
-        "interval_histogram": [
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.2,
-          0.0,
-          0.6,
-          0.0,
-          0.2,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0
-        ],
-        "legato_ratio": 0.626301567285173,
-        "motif_density": 0.1,
-        "motif_repetition": 0.1,
-        "reference_motif": [
-          {
-            "ct": true,
-            "deg": -1,
-            "dur": 1.4799999999999904,
-            "step16": 0
-          },
-          {
-            "ct": false,
-            "deg": 0,
-            "dur": 1.603333333333321,
-            "step16": 23
-          },
-          {
-            "ct": false,
-            "deg": 0,
-            "dur": 1.4800000000000124,
-            "step16": 24
-          }
-        ],
-        "register_high": 73,
-        "register_low": 66,
-        "tension_tone_ratio": 0.65
-      },
-      "rhythm": {
-        "anticipation": 0.5,
-        "bass_onset_grid": [
-          0.0,
-          0.5,
-          0.0,
-          0.5,
-          1.0,
-          0.0,
-          0.0,
-          1.0,
-          0.0,
-          0.5,
-          0.5,
-          1.0,
-          1.0,
-          0.0,
-          0.5,
-          1.0
-        ],
-        "bass_pattern": [
-          0.0,
-          0.846153846153846,
-          0.0,
-          0.0,
-          1.0,
-          0.0,
-          0.0,
-          1.0,
-          0.0,
-          0.0,
-          0.846153846153846,
-          1.0,
-          0.0,
-          0.0,
-          0.846153846153846,
-          0.0
-        ],
-        "chord_onset_grid": [
-          0.0,
-          0.5,
-          0.0,
-          0.5,
-          1.0,
-          0.0,
-          0.0,
-          1.0,
-          0.0,
-          0.5,
-          0.5,
-          1.0,
-          1.0,
-          0.0,
-          0.5,
-          1.0
-        ],
-        "chord_pattern": [
-          0.0,
-          0.846153846153846,
-          0.0,
-          0.0,
-          1.0,
-          0.0,
-          0.0,
-          1.0,
-          0.0,
-          0.0,
-          0.846153846153846,
-          1.0,
-          0.0,
-          0.0,
-          0.846153846153846,
-          0.0
-        ],
-        "harmonic_pacing": 0.6,
-        "melody_onset_grid": [
-          0.7,
-          0.1,
-          0.4,
-          0.2,
-          0.6,
-          0.1,
-          0.45,
-          0.2,
-          0.65,
-          0.15,
-          0.4,
-          0.25,
-          0.5,
-          0.1,
-          0.35,
-          0.15
-        ],
-        "subdivision": 16,
-        "sustain_ratio": 0.96,
-        "swing": 0.5129740518962073,
-        "syncopation": 0.7333333333333333
-      },
-      "voicing": {
-        "bass_register_high": 40,
-        "bass_register_low": 35,
-        "center_pitch": 62,
-        "drop2_prob": 0.0,
-        "extension_richness": 0.0,
-        "inversion_prob": 1.0,
-        "max_notes": 3,
-        "min_notes": 3,
-        "register_high": 68,
-        "register_low": 57,
-        "spread_semitones": 9.0,
-        "sub_bass_clearance_midi": 57,
-        "voice_leading_tightness": 0.9428571428571428
-      }
-    },
-    "outro": {
-      "harmony": {
-        "chromaticism": 0.04713375796178356,
-        "mode": "mixolydian",
-        "reference_progression": [
-          "bVIIsus2",
-          "bVIIsus2",
-          "bVIIsus2",
-          "bVIIsus2"
-        ],
-        "tonic_pc": 4,
-        "transitions": {
-          "bVIIsus2": {
-            "bVIIsus2": 1.0
-          }
-        },
-        "vocabulary": [
           {
             "accidental": -1,
             "bass_degree_offset": 0,
-            "cadence_weight": 1.0,
+            "cadence_weight": 0.3333333333333333,
             "degree": 7,
-            "quality": "sus2",
-            "symbol": "bVIIsus2",
-            "weight": 1.0
+            "quality": "sus4",
+            "symbol": "bVIIsus4",
+            "weight": 0.07142857142857142
           }
         ]
       },
       "melody": {
-        "arch_contour": 0.6555555555555562,
-        "chord_tone_ratio": 0.2,
+        "arch_contour": 0.2592592592592595,
+        "chord_tone_ratio": 0.5454545454545454,
         "interval_histogram": [
           0.0,
           0.0,
           0.0,
           0.0,
-          0.1111111111111111,
+          0.1,
           0.0,
           0.0,
           0.0,
           0.0,
           0.0,
+          0.1,
+          0.1,
+          0.2,
+          0.2,
+          0.2,
           0.0,
-          0.1111111111111111,
-          0.4444444444444444,
-          0.2222222222222222,
           0.0,
-          0.0,
-          0.0,
-          0.1111111111111111,
+          0.1,
           0.0,
           0.0,
           0.0,
@@ -834,123 +398,158 @@
           0.0,
           0.0
         ],
-        "legato_ratio": 0.7342705971277381,
-        "motif_density": 0.3125,
-        "motif_repetition": 0.2222222222222222,
+        "legato_ratio": 0.3842653061224464,
+        "motif_density": 0.1375,
+        "motif_repetition": 0.1,
         "reference_motif": [
           {
             "ct": false,
             "deg": -3,
-            "dur": 1.603333333333321,
-            "step16": 7
+            "dur": 1.0573333333333252,
+            "step16": 14
           },
           {
             "ct": false,
             "deg": -3,
-            "dur": 1.4800000000000124,
-            "step16": 9
-          },
-          {
-            "ct": false,
-            "deg": -3,
-            "dur": 1.4800000000000124,
-            "step16": 10
-          },
-          {
-            "ct": false,
-            "deg": 0,
-            "dur": 1.4800000000000124,
+            "dur": 1.0,
             "step16": 16
           },
           {
+            "ct": false,
+            "deg": 0,
+            "dur": 1.0,
+            "step16": 20
+          },
+          {
             "ct": true,
             "deg": 1,
-            "dur": 1.4800000000000124,
-            "step16": 18
+            "dur": 1.0,
+            "step16": 21
           },
           {
             "ct": false,
             "deg": 0,
-            "dur": 1.603333333333321,
-            "step16": 22
+            "dur": 1.0573333333333252,
+            "step16": 24
           },
           {
             "ct": true,
             "deg": 1,
-            "dur": 3.0833333333333335,
-            "step16": 25
+            "dur": 2.0333333333333337,
+            "step16": 26
           },
           {
-            "ct": false,
+            "ct": true,
             "deg": -4,
-            "dur": 1.603333333333321,
+            "dur": 1.0573333333333252,
+            "step16": 30
+          },
+          {
+            "ct": true,
+            "deg": -4,
+            "dur": 1.0,
             "step16": 31
           }
         ],
         "register_high": 74,
         "register_low": 66,
-        "tension_tone_ratio": 0.65
+        "tension_tone_ratio": 0.45454545454545453
       },
       "rhythm": {
-        "anticipation": 0.2272727272727273,
+        "anticipation": 0.4545454545454546,
         "bass_onset_grid": [
           1.0,
-          0.5,
-          0.5,
-          0.5,
-          0.5,
-          0.5,
+          0.0,
           1.0,
           0.0,
           1.0,
-          0.5,
-          0.5,
+          0.0,
+          1.0,
+          0.6666666666666666,
+          0.0,
+          1.0,
+          0.0,
           0.0,
           1.0,
           1.0,
-          0.5,
-          0.0
+          0.0,
+          1.0
         ],
         "bass_pattern": [
+          0.0,
+          0.0,
+          1.0,
+          0.0,
+          1.0,
+          0.0,
           1.0,
           0.0,
           0.0,
+          1.0,
           0.0,
           0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
+          1.0,
+          1.0,
           0.0,
           0.0
         ],
         "chord_onset_grid": [
           1.0,
-          0.5,
-          1.0,
-          0.5,
-          0.5,
-          0.5,
-          1.0,
-          0.5,
-          1.0,
-          1.0,
-          1.0,
+          0.0,
+          0.6,
           0.0,
           1.0,
-          0.5,
-          0.5,
-          0.5
+          1.0,
+          1.0,
+          1.0,
+          0.2,
+          1.0,
+          0.2,
+          0.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
         ],
         "chord_pattern": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          0.0,
           1.0,
           0.0,
           0.0,
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "harmonic_pacing": 0.4,
+        "melody_onset_grid": [
+          0.4,
+          0.0,
+          0.0,
+          0.0,
+          0.2,
+          0.2,
+          0.0,
+          0.0,
+          0.2,
+          0.0,
+          0.2,
+          0.0,
+          0.0,
+          0.0,
+          1.0,
+          0.0
+        ],
+        "melody_pattern": [
+          0.85,
           0.0,
           0.0,
           0.0,
@@ -961,66 +560,621 @@
           0.0,
           0.0,
           0.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0,
+          0.0
+        ],
+        "subdivision": 16,
+        "sustain_ratio": 0.4880000000000041,
+        "swing": 0.29150320049556194,
+        "syncopation": 0.6934782608695652
+      },
+      "voicing": {
+        "bass_register_high": 40,
+        "bass_register_low": 35,
+        "center_pitch": 62,
+        "drop2_prob": 0.0,
+        "extension_richness": 0.0,
+        "inversion_prob": 0.75,
+        "max_notes": 3,
+        "min_notes": 3,
+        "register_high": 68,
+        "register_low": 57,
+        "spread_semitones": 9.0,
+        "sub_bass_clearance_midi": 57,
+        "voice_leading_tightness": 0.948051948051948
+      }
+    },
+    "intro": {
+      "harmony": {
+        "chromaticism": 0.03189910979228492,
+        "mode": "mixolydian",
+        "reference_progression": [
+          "bVII",
+          "bVII",
+          "bVIIsus2",
+          "v"
+        ],
+        "tonic_pc": 4,
+        "transitions": {
+          "bVII": {
+            "bVII": 0.012385919165580185,
+            "bVIIsus2": 0.9289439374185138,
+            "bVIIsus4": 0.009778357235984355,
+            "v": 0.04889178617992178
+          },
+          "bVIIsus2": {
+            "bVII": 0.059748427672955975,
+            "bVIIsus2": 0.0031446540880503146,
+            "bVIIsus4": 0.009433962264150943,
+            "v": 0.9276729559748428
+          },
+          "bVIIsus4": {
+            "bVII": 0.9174679487179487,
+            "bVIIsus2": 0.02003205128205128,
+            "bVIIsus4": 0.0024038461538461535,
+            "v": 0.06009615384615384
+          },
+          "v": {
+            "bVII": 0.061290322580645165,
+            "bVIIsus2": 0.01612903225806452,
+            "bVIIsus4": 0.9129032258064517,
+            "v": 0.009677419354838712
+          }
+        },
+        "vocabulary": [
+          {
+            "accidental": -1,
+            "bass_degree_offset": 0,
+            "cadence_weight": 0.3333333333333333,
+            "degree": 7,
+            "quality": "maj",
+            "symbol": "bVII",
+            "weight": 0.4523809523809524
+          },
+          {
+            "accidental": 0,
+            "bass_degree_offset": 0,
+            "cadence_weight": 0.3333333333333333,
+            "degree": 5,
+            "quality": "min",
+            "symbol": "v",
+            "weight": 0.35714285714285715
+          },
+          {
+            "accidental": -1,
+            "bass_degree_offset": 0,
+            "cadence_weight": 0.0,
+            "degree": 7,
+            "quality": "sus2",
+            "symbol": "bVIIsus2",
+            "weight": 0.11904761904761904
+          },
+          {
+            "accidental": -1,
+            "bass_degree_offset": 0,
+            "cadence_weight": 0.3333333333333333,
+            "degree": 7,
+            "quality": "sus4",
+            "symbol": "bVIIsus4",
+            "weight": 0.07142857142857142
+          }
+        ]
+      },
+      "melody": {
+        "arch_contour": 0.2592592592592595,
+        "chord_tone_ratio": 0.5454545454545454,
+        "interval_histogram": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.10000000000000002,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.10000000000000002,
+          0.10000000000000002,
+          0.20000000000000004,
+          0.20000000000000004,
+          0.20000000000000004,
+          0.0,
+          0.0,
+          0.10000000000000002,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "legato_ratio": 0.3842653061224464,
+        "motif_density": 0.1,
+        "motif_repetition": 0.1,
+        "reference_motif": [
+          {
+            "ct": false,
+            "deg": -3,
+            "dur": 1.0573333333333252,
+            "step16": 14
+          },
+          {
+            "ct": false,
+            "deg": -3,
+            "dur": 1.0,
+            "step16": 16
+          },
+          {
+            "ct": false,
+            "deg": 0,
+            "dur": 1.0,
+            "step16": 20
+          },
+          {
+            "ct": true,
+            "deg": 1,
+            "dur": 1.0,
+            "step16": 21
+          },
+          {
+            "ct": false,
+            "deg": 0,
+            "dur": 1.0573333333333252,
+            "step16": 24
+          },
+          {
+            "ct": true,
+            "deg": 1,
+            "dur": 2.0333333333333337,
+            "step16": 26
+          },
+          {
+            "ct": true,
+            "deg": -4,
+            "dur": 1.0573333333333252,
+            "step16": 30
+          },
+          {
+            "ct": true,
+            "deg": -4,
+            "dur": 1.0,
+            "step16": 31
+          }
+        ],
+        "register_high": 74,
+        "register_low": 66,
+        "tension_tone_ratio": 0.45454545454545453
+      },
+      "rhythm": {
+        "anticipation": 0.4545454545454546,
+        "bass_onset_grid": [
+          1.0,
+          0.0,
+          0.35,
+          0.0,
+          0.35,
+          0.0,
+          0.35,
+          0.2333333333333333,
+          0.0,
+          0.35,
+          0.0,
+          0.0,
+          0.35,
+          0.35,
+          0.0,
+          0.35
+        ],
+        "bass_pattern": [
+          0.0,
+          0.0,
+          1.0,
+          0.0,
+          1.0,
+          0.0,
+          1.0,
+          0.0,
+          0.0,
+          1.0,
+          0.0,
+          0.0,
+          1.0,
+          1.0,
+          0.0,
+          0.0
+        ],
+        "chord_onset_grid": [
+          1.0,
+          0.0,
+          0.6,
+          0.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          0.2,
+          1.0,
+          0.2,
+          0.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "chord_pattern": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          0.0,
+          1.0,
+          0.0,
+          0.0,
+          1.0,
           0.0,
           0.0,
           0.0
         ],
         "harmonic_pacing": 0.25,
         "melody_onset_grid": [
-          0.5,
-          0.5,
-          1.0,
+          0.22000000000000003,
           0.0,
           0.0,
           0.0,
-          0.5,
-          0.5,
-          0.0,
-          1.0,
-          0.5,
+          0.11000000000000001,
+          0.11000000000000001,
           0.0,
           0.0,
+          0.11000000000000001,
+          0.0,
+          0.11000000000000001,
           0.0,
           0.0,
-          0.5
+          0.0,
+          0.55,
+          0.0
         ],
         "melody_pattern": [
           0.85,
           0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
           1.0,
-          0.0,
-          0.0,
-          0.0,
-          0.846153846153846,
-          0.0,
-          0.0,
-          1.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.846153846153846
+          0.0
         ],
         "subdivision": 16,
-        "sustain_ratio": 0.7400000000000062,
-        "swing": 0.300399201596831,
-        "syncopation": 0.6612903225806451
+        "sustain_ratio": 0.5612000000000047,
+        "swing": 0.29150320049556194,
+        "syncopation": 0.4507608695652174
       },
       "voicing": {
         "bass_register_high": 40,
         "bass_register_low": 35,
-        "center_pitch": 63,
+        "center_pitch": 64,
         "drop2_prob": 0.0,
         "extension_richness": 0.0,
-        "inversion_prob": 1.0,
+        "inversion_prob": 0.75,
+        "max_notes": 3,
+        "min_notes": 3,
+        "register_high": 68,
+        "register_low": 61,
+        "spread_semitones": 7.6499999999999995,
+        "sub_bass_clearance_midi": 57,
+        "voice_leading_tightness": 0.948051948051948
+      }
+    },
+    "outro": {
+      "harmony": {
+        "chromaticism": 0.03189910979228492,
+        "mode": "mixolydian",
+        "reference_progression": [
+          "bVII",
+          "bVII",
+          "bVIIsus2",
+          "v"
+        ],
+        "tonic_pc": 4,
+        "transitions": {
+          "bVII": {
+            "bVII": 0.012385919165580185,
+            "bVIIsus2": 0.9289439374185138,
+            "bVIIsus4": 0.009778357235984355,
+            "v": 0.04889178617992178
+          },
+          "bVIIsus2": {
+            "bVII": 0.059748427672955975,
+            "bVIIsus2": 0.0031446540880503146,
+            "bVIIsus4": 0.009433962264150943,
+            "v": 0.9276729559748428
+          },
+          "bVIIsus4": {
+            "bVII": 0.9174679487179487,
+            "bVIIsus2": 0.02003205128205128,
+            "bVIIsus4": 0.0024038461538461535,
+            "v": 0.06009615384615384
+          },
+          "v": {
+            "bVII": 0.061290322580645165,
+            "bVIIsus2": 0.01612903225806452,
+            "bVIIsus4": 0.9129032258064517,
+            "v": 0.009677419354838712
+          }
+        },
+        "vocabulary": [
+          {
+            "accidental": -1,
+            "bass_degree_offset": 0,
+            "cadence_weight": 0.3333333333333333,
+            "degree": 7,
+            "quality": "maj",
+            "symbol": "bVII",
+            "weight": 0.4523809523809524
+          },
+          {
+            "accidental": 0,
+            "bass_degree_offset": 0,
+            "cadence_weight": 0.3333333333333333,
+            "degree": 5,
+            "quality": "min",
+            "symbol": "v",
+            "weight": 0.35714285714285715
+          },
+          {
+            "accidental": -1,
+            "bass_degree_offset": 0,
+            "cadence_weight": 0.0,
+            "degree": 7,
+            "quality": "sus2",
+            "symbol": "bVIIsus2",
+            "weight": 0.11904761904761904
+          },
+          {
+            "accidental": -1,
+            "bass_degree_offset": 0,
+            "cadence_weight": 0.3333333333333333,
+            "degree": 7,
+            "quality": "sus4",
+            "symbol": "bVIIsus4",
+            "weight": 0.07142857142857142
+          }
+        ]
+      },
+      "melody": {
+        "arch_contour": 0.2592592592592595,
+        "chord_tone_ratio": 0.5454545454545454,
+        "interval_histogram": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.10000000000000002,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.10000000000000002,
+          0.10000000000000002,
+          0.20000000000000004,
+          0.20000000000000004,
+          0.20000000000000004,
+          0.0,
+          0.0,
+          0.10000000000000002,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "legato_ratio": 0.3842653061224464,
+        "motif_density": 0.1,
+        "motif_repetition": 0.1,
+        "reference_motif": [
+          {
+            "ct": false,
+            "deg": -3,
+            "dur": 1.0573333333333252,
+            "step16": 14
+          },
+          {
+            "ct": false,
+            "deg": -3,
+            "dur": 1.0,
+            "step16": 16
+          },
+          {
+            "ct": false,
+            "deg": 0,
+            "dur": 1.0,
+            "step16": 20
+          },
+          {
+            "ct": true,
+            "deg": 1,
+            "dur": 1.0,
+            "step16": 21
+          },
+          {
+            "ct": false,
+            "deg": 0,
+            "dur": 1.0573333333333252,
+            "step16": 24
+          },
+          {
+            "ct": true,
+            "deg": 1,
+            "dur": 2.0333333333333337,
+            "step16": 26
+          },
+          {
+            "ct": true,
+            "deg": -4,
+            "dur": 1.0573333333333252,
+            "step16": 30
+          },
+          {
+            "ct": true,
+            "deg": -4,
+            "dur": 1.0,
+            "step16": 31
+          }
+        ],
+        "register_high": 74,
+        "register_low": 66,
+        "tension_tone_ratio": 0.45454545454545453
+      },
+      "rhythm": {
+        "anticipation": 0.4545454545454546,
+        "bass_onset_grid": [
+          1.0,
+          0.0,
+          1.0,
+          0.0,
+          1.0,
+          0.0,
+          1.0,
+          0.6666666666666666,
+          0.0,
+          1.0,
+          0.0,
+          0.0,
+          1.0,
+          1.0,
+          0.0,
+          1.0
+        ],
+        "bass_pattern": [
+          0.0,
+          0.0,
+          1.0,
+          0.0,
+          1.0,
+          0.0,
+          1.0,
+          0.0,
+          0.0,
+          1.0,
+          0.0,
+          0.0,
+          1.0,
+          1.0,
+          0.0,
+          0.0
+        ],
+        "chord_onset_grid": [
+          1.0,
+          0.0,
+          0.6,
+          0.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          0.2,
+          1.0,
+          0.2,
+          0.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "chord_pattern": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          0.0,
+          1.0,
+          0.0,
+          0.0,
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "harmonic_pacing": 0.4,
+        "melody_onset_grid": [
+          0.4,
+          0.0,
+          0.0,
+          0.0,
+          0.2,
+          0.2,
+          0.0,
+          0.0,
+          0.2,
+          0.0,
+          0.2,
+          0.0,
+          0.0,
+          0.0,
+          1.0,
+          0.0
+        ],
+        "melody_pattern": [
+          0.85,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0,
+          0.0
+        ],
+        "subdivision": 16,
+        "sustain_ratio": 0.5856000000000049,
+        "swing": 0.29150320049556194,
+        "syncopation": 0.5201086956521739
+      },
+      "voicing": {
+        "bass_register_high": 40,
+        "bass_register_low": 35,
+        "center_pitch": 62,
+        "drop2_prob": 0.0,
+        "extension_richness": 0.0,
+        "inversion_prob": 0.75,
         "max_notes": 3,
         "min_notes": 3,
         "register_high": 68,
         "register_low": 57,
         "spread_semitones": 9.0,
         "sub_bass_clearance_midi": 57,
-        "voice_leading_tightness": 0.9714285714285714
+        "voice_leading_tightness": 0.948051948051948
       }
     }
   },
@@ -1039,13 +1193,13 @@
     "center_pitch": 62,
     "drop2_prob": 0.0,
     "extension_richness": 0.0,
-    "inversion_prob": 1.0,
+    "inversion_prob": 0.75,
     "max_notes": 3,
     "min_notes": 3,
     "register_high": 68,
     "register_low": 57,
     "spread_semitones": 9.0,
     "sub_bass_clearance_midi": 57,
-    "voice_leading_tightness": 0.9428571428571428
+    "voice_leading_tightness": 0.948051948051948
   }
 }
