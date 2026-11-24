@@ -1,16 +1,24 @@
 {
   "schema_version": 1,
   "catalog_name": "StyleScaler Preset Catalog",
-  "updated_at": "2026-11-24T15:16:28Z",
+  "updated_at": "2026-11-24T15:20:38Z",
   "genres": {
     "Drum & Bass": [
       "liquid_dnb",
       "neuro_dnb"
     ],
     "Funk / Disco": [
+      "victoria_monet_alright",
+      "victoria_monet_cadillac_a_pimp_s_anthem",
+      "victoria_monet_good_bye",
+      "victoria_monet_hollywood",
+      "victoria_monet_how_does_it_make_you_feel",
+      "victoria_monet_i_m_the_one",
+      "victoria_monet_on_my_mama",
       "victoria_monet_party_girls",
       "victoria_monet_smoke",
-      "victoria_monet_smoke_reprise"
+      "victoria_monet_smoke_reprise",
+      "victoria_monet_stop_askin_me_4shyt"
     ],
     "Hip-Hop": [
       "90s_hiphop"
@@ -77,9 +85,17 @@
       "olivia_rodrigo_vampire"
     ],
     "Victoria Monet": [
+      "victoria_monet_alright",
+      "victoria_monet_cadillac_a_pimp_s_anthem",
+      "victoria_monet_good_bye",
+      "victoria_monet_hollywood",
+      "victoria_monet_how_does_it_make_you_feel",
+      "victoria_monet_i_m_the_one",
+      "victoria_monet_on_my_mama",
       "victoria_monet_party_girls",
       "victoria_monet_smoke",
-      "victoria_monet_smoke_reprise"
+      "victoria_monet_smoke_reprise",
+      "victoria_monet_stop_askin_me_4shyt"
     ]
   },
   "presets": [
@@ -95,7 +111,7 @@
       "default_bpm": 92.0,
       "mode": "dorian",
       "tonic_pc": 0,
-      "updated_at": "2026-11-24T15:16:28Z"
+      "updated_at": "2026-11-24T15:20:38Z"
     },
     {
       "id": "liquid_dnb",
@@ -109,7 +125,7 @@
       "default_bpm": 174.0,
       "mode": "minor",
       "tonic_pc": 0,
-      "updated_at": "2026-11-24T15:16:28Z"
+      "updated_at": "2026-11-24T15:20:38Z"
     },
     {
       "id": "melodic_house",
@@ -123,7 +139,7 @@
       "default_bpm": 124.0,
       "mode": "minor",
       "tonic_pc": 0,
-      "updated_at": "2026-11-24T15:16:28Z"
+      "updated_at": "2026-11-24T15:20:38Z"
     },
     {
       "id": "michael_jackson_baby_be_mine",
@@ -137,7 +153,7 @@
       "default_bpm": 111.0,
       "mode": "dorian",
       "tonic_pc": 7,
-      "updated_at": "2026-11-24T15:16:28Z",
+      "updated_at": "2026-11-24T15:20:38Z",
       "tags": [
         "r&b"
       ],
@@ -157,7 +173,7 @@
       "default_bpm": 137.0,
       "mode": "mixolydian",
       "tonic_pc": 3,
-      "updated_at": "2026-11-24T15:16:28Z",
+      "updated_at": "2026-11-24T15:20:38Z",
       "tags": [
         "r&b"
       ],
@@ -177,7 +193,7 @@
       "default_bpm": 118.0,
       "mode": "minor",
       "tonic_pc": 6,
-      "updated_at": "2026-11-24T15:16:28Z",
+      "updated_at": "2026-11-24T15:20:38Z",
       "tags": [
         "r&b"
       ],
@@ -197,7 +213,7 @@
       "default_bpm": 185.0,
       "mode": "mixolydian",
       "tonic_pc": 9,
-      "updated_at": "2026-11-24T15:16:28Z",
+      "updated_at": "2026-11-24T15:20:38Z",
       "tags": [
         "r&b"
       ],
@@ -217,7 +233,7 @@
       "default_bpm": 127.0,
       "mode": "minor",
       "tonic_pc": 11,
-      "updated_at": "2026-11-24T15:16:28Z",
+      "updated_at": "2026-11-24T15:20:38Z",
       "tags": [
         "r&b"
       ],
@@ -237,7 +253,7 @@
       "default_bpm": 165.0,
       "mode": "major",
       "tonic_pc": 4,
-      "updated_at": "2026-11-24T15:16:28Z",
+      "updated_at": "2026-11-24T15:20:38Z",
       "tags": [
         "r&b"
       ],
@@ -257,7 +273,7 @@
       "default_bpm": 143.0,
       "mode": "minor",
       "tonic_pc": 9,
-      "updated_at": "2026-11-24T15:16:28Z",
+      "updated_at": "2026-11-24T15:20:38Z",
       "tags": [
         "r&b"
       ],
@@ -277,7 +293,7 @@
       "default_bpm": 121.0,
       "mode": "minor",
       "tonic_pc": 1,
-      "updated_at": "2026-11-24T15:16:28Z",
+      "updated_at": "2026-11-24T15:20:38Z",
       "tags": [
         "r&b"
       ],
@@ -297,7 +313,7 @@
       "default_bpm": 185.0,
       "mode": "mixolydian",
       "tonic_pc": 4,
-      "updated_at": "2026-11-24T15:16:28Z",
+      "updated_at": "2026-11-24T15:20:38Z",
       "tags": [
         "r&b"
       ],
@@ -317,7 +333,7 @@
       "default_bpm": 88.0,
       "mode": "dorian",
       "tonic_pc": 7,
-      "updated_at": "2026-11-24T15:16:28Z"
+      "updated_at": "2026-11-24T15:20:38Z"
     },
     {
       "id": "neuro_dnb",
@@ -331,7 +347,7 @@
       "default_bpm": 174.0,
       "mode": "phrygian",
       "tonic_pc": 0,
-      "updated_at": "2026-11-24T15:16:28Z"
+      "updated_at": "2026-11-24T15:20:38Z"
     },
     {
       "id": "olivia_rodrigo_all_american_bitch",
@@ -345,7 +361,7 @@
       "default_bpm": 155.0,
       "mode": "major",
       "tonic_pc": 6,
-      "updated_at": "2026-11-24T15:16:28Z",
+      "updated_at": "2026-11-24T15:20:38Z",
       "tags": [
         "pop / rock"
       ],
@@ -365,7 +381,7 @@
       "default_bpm": 130.0,
       "mode": "major",
       "tonic_pc": 9,
-      "updated_at": "2026-11-24T15:16:28Z",
+      "updated_at": "2026-11-24T15:20:38Z",
       "tags": [
         "pop / rock"
       ],
@@ -385,7 +401,7 @@
       "default_bpm": 118.0,
       "mode": "mixolydian",
       "tonic_pc": 8,
-      "updated_at": "2026-11-24T15:16:28Z",
+      "updated_at": "2026-11-24T15:20:38Z",
       "tags": [
         "pop / rock"
       ],
@@ -405,7 +421,7 @@
       "default_bpm": 162.0,
       "mode": "major",
       "tonic_pc": 5,
-      "updated_at": "2026-11-24T15:16:28Z",
+      "updated_at": "2026-11-24T15:20:38Z",
       "tags": [
         "pop / rock"
       ],
@@ -425,7 +441,7 @@
       "default_bpm": 154.0,
       "mode": "major",
       "tonic_pc": 3,
-      "updated_at": "2026-11-24T15:16:28Z",
+      "updated_at": "2026-11-24T15:20:38Z",
       "tags": [
         "pop / rock"
       ],
@@ -445,7 +461,7 @@
       "default_bpm": 163.0,
       "mode": "major",
       "tonic_pc": 7,
-      "updated_at": "2026-11-24T15:16:28Z",
+      "updated_at": "2026-11-24T15:20:38Z",
       "tags": [
         "pop / rock"
       ],
@@ -465,7 +481,7 @@
       "default_bpm": 160.0,
       "mode": "major",
       "tonic_pc": 9,
-      "updated_at": "2026-11-24T15:16:28Z",
+      "updated_at": "2026-11-24T15:20:38Z",
       "tags": [
         "pop / rock"
       ],
@@ -485,7 +501,7 @@
       "default_bpm": 132.0,
       "mode": "major",
       "tonic_pc": 7,
-      "updated_at": "2026-11-24T15:16:28Z",
+      "updated_at": "2026-11-24T15:20:38Z",
       "tags": [
         "pop / rock"
       ],
@@ -505,7 +521,7 @@
       "default_bpm": 121.0,
       "mode": "major",
       "tonic_pc": 2,
-      "updated_at": "2026-11-24T15:16:28Z",
+      "updated_at": "2026-11-24T15:20:38Z",
       "tags": [
         "pop / rock"
       ],
@@ -525,7 +541,7 @@
       "default_bpm": 138.0,
       "mode": "major",
       "tonic_pc": 0,
-      "updated_at": "2026-11-24T15:16:28Z",
+      "updated_at": "2026-11-24T15:20:38Z",
       "tags": [
         "pop / rock"
       ],
@@ -545,7 +561,7 @@
       "default_bpm": 127.0,
       "mode": "major",
       "tonic_pc": 10,
-      "updated_at": "2026-11-24T15:16:28Z",
+      "updated_at": "2026-11-24T15:20:38Z",
       "tags": [
         "pop / rock"
       ],
@@ -565,7 +581,7 @@
       "default_bpm": 136.0,
       "mode": "major",
       "tonic_pc": 5,
-      "updated_at": "2026-11-24T15:16:28Z",
+      "updated_at": "2026-11-24T15:20:38Z",
       "tags": [
         "pop / rock"
       ],
@@ -585,7 +601,161 @@
       "default_bpm": 140.0,
       "mode": "phrygian",
       "tonic_pc": 0,
-      "updated_at": "2026-11-24T15:16:28Z"
+      "updated_at": "2026-11-24T15:20:38Z"
+    },
+    {
+      "id": "victoria_monet_alright",
+      "name": "Alright",
+      "genre": "Funk / Disco",
+      "description": "Offline deconstructed Funk / Disco from 1 track(s) via offline_MuScriptor (CPU) [genre: vorbis]",
+      "file": "styles/victoria_monet_alright.json",
+      "sha256": "04d4229aeb0fae186f7edee54267bb88b675bd32c730a49951a75f66c89c2f98",
+      "bpm_min": 100.0,
+      "bpm_max": 116.0,
+      "default_bpm": 108.0,
+      "mode": "major",
+      "tonic_pc": 10,
+      "updated_at": "2026-11-24T15:20:38Z",
+      "tags": [
+        "funk / disco",
+        "r&b / neo-soul",
+        "r&b"
+      ],
+      "genre_source": "vorbis",
+      "artist": "Victoria Monet",
+      "album": "JAGUAR II"
+    },
+    {
+      "id": "victoria_monet_cadillac_a_pimp_s_anthem",
+      "name": "Cadillac (A Pimp's Anthem)",
+      "genre": "Funk / Disco",
+      "description": "Offline deconstructed Funk / Disco from 1 track(s) via offline_MuScriptor (CPU) [genre: vorbis]",
+      "file": "styles/victoria_monet_cadillac_a_pimp_s_anthem.json",
+      "sha256": "be4eb78361f8370a7bdbfb000250d434c27f90599c774336c444066d03fdfe60",
+      "bpm_min": 128.0,
+      "bpm_max": 144.0,
+      "default_bpm": 136.0,
+      "mode": "minor",
+      "tonic_pc": 6,
+      "updated_at": "2026-11-24T15:20:38Z",
+      "tags": [
+        "funk / disco",
+        "r&b / neo-soul",
+        "r&b"
+      ],
+      "genre_source": "vorbis",
+      "artist": "Victoria Monet",
+      "album": "JAGUAR II"
+    },
+    {
+      "id": "victoria_monet_good_bye",
+      "name": "Good Bye",
+      "genre": "Funk / Disco",
+      "description": "Offline deconstructed Funk / Disco from 1 track(s) via offline_MuScriptor (CPU) [genre: vorbis]",
+      "file": "styles/victoria_monet_good_bye.json",
+      "sha256": "c5afe7b74b717b403ae27005e3fa7aba134f35a0e2fc4a39f06dec9d2b21227a",
+      "bpm_min": 127.0,
+      "bpm_max": 143.0,
+      "default_bpm": 135.0,
+      "mode": "minor",
+      "tonic_pc": 0,
+      "updated_at": "2026-11-24T15:20:38Z",
+      "tags": [
+        "funk / disco",
+        "r&b / neo-soul",
+        "r&b"
+      ],
+      "genre_source": "vorbis",
+      "artist": "Victoria Monet",
+      "album": "JAGUAR II"
+    },
+    {
+      "id": "victoria_monet_hollywood",
+      "name": "Hollywood",
+      "genre": "Funk / Disco",
+      "description": "Offline deconstructed Funk / Disco from 1 track(s) via offline_MuScriptor (CPU) [genre: vorbis]",
+      "file": "styles/victoria_monet_hollywood.json",
+      "sha256": "c0f97e80005f5d25ec5ab3a0815027efc8d3b884388d1f392abd98437ef5970e",
+      "bpm_min": 158.0,
+      "bpm_max": 174.0,
+      "default_bpm": 166.0,
+      "mode": "minor",
+      "tonic_pc": 6,
+      "updated_at": "2026-11-24T15:20:38Z",
+      "tags": [
+        "funk / disco",
+        "r&b / neo-soul",
+        "r&b"
+      ],
+      "genre_source": "vorbis",
+      "artist": "Victoria Monet",
+      "album": "JAGUAR II"
+    },
+    {
+      "id": "victoria_monet_how_does_it_make_you_feel",
+      "name": "How Does It Make You Feel",
+      "genre": "Funk / Disco",
+      "description": "Offline deconstructed Funk / Disco from 1 track(s) via offline_MuScriptor (CPU) [genre: vorbis]",
+      "file": "styles/victoria_monet_how_does_it_make_you_feel.json",
+      "sha256": "bcdf38c36e00e11ec48cba1c078d0c4dfe34b01b73d02d45b881cba011177b3f",
+      "bpm_min": 153.0,
+      "bpm_max": 169.0,
+      "default_bpm": 161.0,
+      "mode": "minor",
+      "tonic_pc": 4,
+      "updated_at": "2026-11-24T15:20:38Z",
+      "tags": [
+        "funk / disco",
+        "r&b / neo-soul",
+        "r&b"
+      ],
+      "genre_source": "vorbis",
+      "artist": "Victoria Monet",
+      "album": "JAGUAR II"
+    },
+    {
+      "id": "victoria_monet_i_m_the_one",
+      "name": "I'm The One",
+      "genre": "Funk / Disco",
+      "description": "Offline deconstructed Funk / Disco from 1 track(s) via offline_MuScriptor (CPU) [genre: vorbis]",
+      "file": "styles/victoria_monet_i_m_the_one.json",
+      "sha256": "46a5b83498318f2721bb99db29a5908d041f311e5f23c9bdd5ca0c1b3bc3f50f",
+      "bpm_min": 161.0,
+      "bpm_max": 177.0,
+      "default_bpm": 169.0,
+      "mode": "phrygian",
+      "tonic_pc": 9,
+      "updated_at": "2026-11-24T15:20:38Z",
+      "tags": [
+        "funk / disco",
+        "r&b / neo-soul",
+        "r&b"
+      ],
+      "genre_source": "vorbis",
+      "artist": "Victoria Monet",
+      "album": "JAGUAR II"
+    },
+    {
+      "id": "victoria_monet_on_my_mama",
+      "name": "On My Mama",
+      "genre": "Funk / Disco",
+      "description": "Offline deconstructed Funk / Disco from 1 track(s) via offline_MuScriptor (CPU) [genre: vorbis]",
+      "file": "styles/victoria_monet_on_my_mama.json",
+      "sha256": "d7433f745524a0337e5b3fdea6712de1937d1c9a4c918933e38f1cd0b838afa2",
+      "bpm_min": 150.0,
+      "bpm_max": 166.0,
+      "default_bpm": 158.0,
+      "mode": "dorian",
+      "tonic_pc": 9,
+      "updated_at": "2026-11-24T15:20:38Z",
+      "tags": [
+        "funk / disco",
+        "r&b / neo-soul",
+        "r&b"
+      ],
+      "genre_source": "vorbis",
+      "artist": "Victoria Monet",
+      "album": "JAGUAR II"
     },
     {
       "id": "victoria_monet_party_girls",
@@ -599,7 +769,7 @@
       "default_bpm": 156.0,
       "mode": "minor",
       "tonic_pc": 9,
-      "updated_at": "2026-11-24T15:16:28Z",
+      "updated_at": "2026-11-24T15:20:38Z",
       "tags": [
         "funk / disco",
         "r&b / neo-soul",
@@ -621,7 +791,7 @@
       "default_bpm": 136.0,
       "mode": "dorian",
       "tonic_pc": 7,
-      "updated_at": "2026-11-24T15:16:28Z",
+      "updated_at": "2026-11-24T15:20:38Z",
       "tags": [
         "funk / disco",
         "r&b / neo-soul",
@@ -643,7 +813,29 @@
       "default_bpm": 130.0,
       "mode": "minor",
       "tonic_pc": 4,
-      "updated_at": "2026-11-24T15:16:28Z",
+      "updated_at": "2026-11-24T15:20:38Z",
+      "tags": [
+        "funk / disco",
+        "r&b / neo-soul",
+        "r&b"
+      ],
+      "genre_source": "vorbis",
+      "artist": "Victoria Monet",
+      "album": "JAGUAR II"
+    },
+    {
+      "id": "victoria_monet_stop_askin_me_4shyt",
+      "name": "Stop (Askin' Me 4Shyt)",
+      "genre": "Funk / Disco",
+      "description": "Offline deconstructed Funk / Disco from 1 track(s) via offline_MuScriptor (CPU) [genre: vorbis]",
+      "file": "styles/victoria_monet_stop_askin_me_4shyt.json",
+      "sha256": "54f94aaa78ce70d71e402882273d076013fcfcf10bc404621595b657412d1ecb",
+      "bpm_min": 156.0,
+      "bpm_max": 172.0,
+      "default_bpm": 164.0,
+      "mode": "major",
+      "tonic_pc": 11,
+      "updated_at": "2026-11-24T15:20:38Z",
       "tags": [
         "funk / disco",
         "r&b / neo-soul",
